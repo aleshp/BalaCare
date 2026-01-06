@@ -47,6 +47,7 @@ const AppContent = () => {
       case 'support': return <SupportPage isLoggedIn={isLoggedIn} onLogin={openAuth} />;
       case 'community': return <CommunityPage isLoggedIn={isLoggedIn} onLogin={openAuth} />;
       case 'market': return <MarketPage isLoggedIn={isLoggedIn} onLogin={openAuth} />;
+      case 'profile': return <ProfilePage onLogin={openAuth} />;
       default: return <HomePage />;
     }
   };
