@@ -1,25 +1,27 @@
-import React, { useState, useEffect } from 'react';
-import { User, MapPin, Save, Loader2, LogOut, Globe } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { User, MapPin, Save, Loader2, LogOut, Globe, Camera } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import AuthGate from '../components/AuthGate';
-
-// Импортируем библиотеку для стран и городов
 import { Country, City }  from 'country-state-city';
 
 const ProfilePage: React.FC = () => {
   const { user, profile, loading: authLoading, signOut, openAuthModal } = useAuth();
   
+  // Рефы для клика по скрытому инпуту
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState('parent');
   
-  // Состояния для локации
-  const [selectedCountryCode, setSelectedCountryCode] = useState('KZ'); // По умолчанию Казахстан
+  // Локация
+  const [selectedCountryCode, setSelectedCountryCode] = useState('KZ');
   const [selectedCity, setSelectedCity] = useState('');
   
+  // Состояния загрузки
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false); // Отдельная загрузка для аватара
 
-  // Получаем списки
   const countries = Country.getAllCountries();
   const cities = City.getCitiesOfCountry(selectedCountryCode) || [];
 
@@ -27,10 +29,6 @@ const ProfilePage: React.FC = () => {
     if (profile) {
       setFullName(profile.full_name || '');
       setRole(profile.role || 'parent');
-      
-      // Попытка восстановить город из базы
-      // В базе city хранится как строка. Если там есть что-то, ставим его.
-      // Страну не храним отдельно в этом простом примере, оставляем KZ или сбрасываем если нужно.
       if (profile.city) {
           setSelectedCity(profile.city);
       }
@@ -39,9 +37,55 @@ const ProfilePage: React.FC = () => {
 
   const handleCountryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
       setSelectedCountryCode(e.target.value);
-      setSelectedCity(''); // Сбрасываем город при смене страны
+      setSelectedCity('');
   };
 
+  // --- ФУНКЦИЯ ЗАГРУЗКИ АВАТАРКИ ---
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      if (!event.target.files || event.target.files.length === 0 || !user) {
+        return;
+      }
+      
+      setUploadingAvatar(true);
+      const file = event.target.files[0];
+      const fileExt = file.name.split('.').pop();
+      // Генерируем уникальное имя файла: userID + случайное число + расширение
+      const fileName = `${user.id}-${Math.random()}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      // 1. Загружаем файл в Storage
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // 2. Получаем публичную ссылку
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      // 3. Обновляем профиль в базе
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: publicUrl })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      alert('Аватарка обновлена!');
+      window.location.reload(); // Перезагрузка для обновления контекста
+
+    } catch (error: any) {
+      console.error('Error uploading avatar:', error);
+      alert('Ошибка при загрузке фото: ' + error.message);
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  // Функция сохранения остальных данных
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
@@ -51,7 +95,7 @@ const ProfilePage: React.FC = () => {
         .from('profiles')
         .update({
           full_name: fullName,
-          city: selectedCity, // Сохраняем просто название города
+          city: selectedCity,
           role: role as 'parent' | 'specialist'
         })
         .eq('id', user.id);
@@ -90,14 +134,46 @@ const ProfilePage: React.FC = () => {
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col items-center relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-20 bg-gradient-to-r from-purple-400 to-pink-400 opacity-20"></div>
           
-          <div className="w-24 h-24 bg-white rounded-full mb-4 overflow-hidden border-4 border-white shadow-lg relative z-10">
-            {profile?.avatar_url ? (
-              <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-gray-100">
-                  <User className="w-10 h-10 text-gray-400"/>
-              </div>
-            )}
+          <div className="relative z-10 mb-4 group">
+            <div className="w-28 h-28 bg-white rounded-full overflow-hidden border-4 border-white shadow-lg relative">
+               {/* Отображение картинки или заглушки */}
+               {uploadingAvatar ? (
+                 <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                   <Loader2 className="w-8 h-8 text-purple-600 animate-spin" />
+                 </div>
+               ) : profile?.avatar_url ? (
+                 <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+               ) : (
+                 <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                     <User className="w-10 h-10 text-gray-400"/>
+                 </div>
+               )}
+               
+               {/* Оверлей загрузки (появляется при наведении или всегда на мобильных можно сделать кнопку рядом) */}
+               <div 
+                 onClick={() => fileInputRef.current?.click()}
+                 className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+               >
+                 <Camera className="w-8 h-8 text-white drop-shadow-md" />
+               </div>
+            </div>
+
+            {/* Кнопка-иконка камеры (для мобильных, чтобы было явно видно) */}
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="absolute bottom-0 right-0 bg-purple-600 text-white p-2 rounded-full shadow-lg hover:bg-purple-700 transition-colors active:scale-90"
+            >
+              <Camera className="w-4 h-4" />
+            </button>
+
+            {/* Скрытый инпут для файла */}
+            <input 
+              type="file" 
+              ref={fileInputRef}
+              onChange={handleAvatarUpload}
+              accept="image/*"
+              className="hidden"
+            />
           </div>
           
           <h2 className="text-xl font-bold text-gray-900">{profile?.full_name || user.email}</h2>
