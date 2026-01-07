@@ -37,7 +37,9 @@ const HomePage: React.FC = () => {
   ];
 
   return (
-    <div className="pb-8 space-y-6">
+    // ИЗМЕНЕНИЕ ЗДЕСЬ: pb-32 (было pb-8) - большой отступ снизу
+    <div className="pb-32 space-y-6">
+      
       {/* Hero Banner */}
       <div className="relative overflow-hidden bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 rounded-b-[40px] shadow-2xl pb-10 pt-4 px-6 mb-8">
         <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
@@ -59,7 +61,7 @@ const HomePage: React.FC = () => {
           Мы создали пространство заботы и поддержки для вас и вашего ребенка.
         </p>
 
-        {/* Поиск (визуальный, функционал можно расширить позже) */}
+        {/* Поиск */}
         <div className="bg-white p-2 rounded-2xl flex items-center shadow-lg transform translate-y-6">
           <Search className="w-5 h-5 text-gray-400 ml-2" />
           <input 
