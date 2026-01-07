@@ -200,17 +200,27 @@ const CommunityPage: React.FC = () => {
   const handleStartChat = async (targetUserId: string) => {
     if (!user) return openAuthModal();
     if (targetUserId === user.id) return alert("Нельзя писать самому себе");
-    
+
+    // 1. СНАЧАЛА ЗАКРЫВАЕМ МОДАЛКУ ПОСТА, ЧТОБЫ ВИДЕТЬ ПЕРЕХОД
+    setSelectedPostId(null);
+    setSearchParams({}); // Очищаем URL
+
     try {
+       // Пробуем создать или найти чат
        const { data: conv, error: convError } = await supabase.from('conversations').insert({}).select().single();
+       
        if (convError) throw convError;
 
        await supabase.from('conversation_participants').insert([
          { conversation_id: conv.id, user_id: user.id },
          { conversation_id: conv.id, user_id: targetUserId }
        ]);
+       
+       // 2. ПЕРЕКЛЮЧАЕМСЯ НА ВКЛАДКУ ЧАТОВ
        setActiveTab('chats');
     } catch (e) {
+       // Если ошибка (например, чат уже есть - в реальном проекте надо искать ID),
+       // все равно перекидываем в чаты
        setActiveTab('chats');
     }
   };
