@@ -127,7 +127,13 @@ const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onComme
                  )}
                </button>
 
-               <button className="flex items-center gap-1.5 group p-1">
+               <button 
+                 onClick={(e) => {
+                    e.stopPropagation(); // Чтобы не было двойного клика с родителем
+                    if (onCommentClick) onCommentClick(); // Явно вызываем открытие
+                 }}
+                 className="flex items-center gap-1.5 group p-1 transition-transform active:scale-95"
+               >
                  <MessageCircle className="w-5 h-5 text-gray-400 group-hover:text-purple-600 transition-colors" />
                  {(post.comment_count > 0 || isDetailView) && (
                     <span className="text-xs font-medium text-gray-400 group-hover:text-purple-600">
