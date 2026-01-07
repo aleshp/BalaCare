@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Heart, MessageCircle, Share2, MoreHorizontal } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Database } from '../types/supabase';
 
-// Тот же тип, что и в ThreadView
 type PostWithData = Database['public']['Tables']['community_posts']['Row'] & {
   profiles: { full_name: string | null; avatar_url: string | null } | null;
   post_likes: { user_id: string }[]; 
@@ -14,42 +13,54 @@ interface PostItemProps {
   post: PostWithData;
   isDetailView?: boolean;
   onCommentClick?: () => void;
+  onPostUpdate?: (postId: string, newLikeCount: number, isLiked: boolean) => void;
 }
 
-const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onCommentClick }) => {
+const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onCommentClick, onPostUpdate }) => {
   const { user, openAuthModal } = useAuth();
   
-  // Определяем, лайкнул ли я (есть ли мой ID в массиве лайков этого поста)
-  const isLikedInitially = user ? post.post_likes.some(like => like.user_id === user.id) : false;
-  
-  const [liked, setLiked] = useState(isLikedInitially);
-  const [likeCount, setLikeCount] = useState(post.like_count || 0);
+  // Вычисляем состояние на основе пропсов (это гарантирует синхронизацию)
+  const isLiked = user ? post.post_likes.some(like => like.user_id === user.id) : false;
+  const likeCount = post.like_count || 0;
+
+  // Локальное состояние только для анимации
   const [animating, setAnimating] = useState(false);
+  const [processing, setProcessing] = useState(false);
 
   const handleLike = async (e: React.MouseEvent) => {
-    e.stopPropagation(); // Чтобы не открывался детальный просмотр при лайке
+    e.stopPropagation();
     if (!user) return openAuthModal();
+    if (processing) return; // Защита от двойного клика
 
-    // Оптимистичное обновление UI
-    const newLikedState = !liked;
-    setLiked(newLikedState);
-    setLikeCount(prev => newLikedState ? prev + 1 : prev - 1);
+    setProcessing(true);
     setAnimating(true);
-    setTimeout(() => setAnimating(false), 300); // Сброс анимации
+    setTimeout(() => setAnimating(false), 300);
+
+    // 1. Оптимистичные значения
+    const newIsLiked = !isLiked;
+    const newLikeCount = newIsLiked ? likeCount + 1 : likeCount - 1;
+
+    // 2. Сразу сообщаем родителю об изменении (UI обновится мгновенно везде)
+    if (onPostUpdate) {
+      onPostUpdate(post.id, newLikeCount, newIsLiked);
+    }
 
     try {
-      if (newLikedState) {
-        // Ставим лайк
-        await supabase.from('post_likes').insert({ user_id: user.id, post_id: post.id });
+      if (newIsLiked) {
+        const { error } = await supabase.from('post_likes').insert({ user_id: user.id, post_id: post.id });
+        if (error && error.code !== '23505') throw error; // Игнорируем ошибку дубликата
       } else {
-        // Убираем лайк
-        await supabase.from('post_likes').delete().eq('user_id', user.id).eq('post_id', post.id);
+        const { error } = await supabase.from('post_likes').delete().eq('user_id', user.id).eq('post_id', post.id);
+        if (error) throw error;
       }
     } catch (err) {
-      console.error(err);
-      // Если ошибка - откатываем
-      setLiked(!newLikedState);
-      setLikeCount(prev => newLikedState ? prev - 1 : prev + 1);
+      console.error("Like error:", err);
+      // Если ошибка - откатываем назад
+      if (onPostUpdate) {
+        onPostUpdate(post.id, likeCount, isLiked);
+      }
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -69,13 +80,10 @@ const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onComme
       onClick={onCommentClick}
     >
       <div className="flex gap-3 relative">
-         {/* Threads Connector Line (если не детальный вид, можно добавить логику ветки) */}
-         {/* <div className="absolute top-12 left-[18px] bottom-0 w-0.5 bg-gray-100"></div> */}
-
          <div className="flex-shrink-0">
             <div className="w-10 h-10 rounded-full bg-gray-100 overflow-hidden border border-gray-200">
                {post.profiles?.avatar_url ? (
-                 <img src={post.profiles.avatar_url} className="w-full h-full object-cover" />
+                 <img src={post.profiles.avatar_url} className="w-full h-full object-cover" alt="Avatar" />
                ) : (
                  <div className="w-full h-full bg-gradient-to-br from-indigo-300 to-purple-300"></div>
                )}
@@ -83,7 +91,6 @@ const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onComme
          </div>
 
          <div className="flex-1 min-w-0">
-            {/* Header */}
             <div className="flex justify-between items-start">
                <div>
                   <h3 className="text-sm font-bold text-gray-900 leading-none">
@@ -97,33 +104,31 @@ const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onComme
                </div>
             </div>
 
-            {/* Content */}
             <p className={`text-gray-900 text-sm mt-1 mb-2 whitespace-pre-wrap leading-relaxed ${isDetailView ? 'text-base' : ''}`}>
                {post.content}
             </p>
 
-            {/* Actions Bar */}
             <div className="flex items-center gap-5 mt-2">
-               {/* Like */}
+               {/* Like Button */}
                <button 
                  onClick={handleLike}
-                 className="flex items-center gap-1.5 group p-1 -ml-1"
+                 className="flex items-center gap-1.5 group p-1 -ml-1 transition-transform active:scale-95"
                >
                  <Heart 
                    className={`w-5 h-5 transition-all duration-300 ${
-                     liked 
+                     isLiked 
                        ? 'fill-red-500 text-red-500' 
                        : 'text-gray-400 group-hover:text-red-500'
                    } ${animating ? 'scale-125' : 'scale-100'}`} 
                  />
                  {(likeCount > 0 || isDetailView) && (
-                   <span className={`text-xs font-medium ${liked ? 'text-red-500' : 'text-gray-400'}`}>
+                   <span className={`text-xs font-medium ${isLiked ? 'text-red-500' : 'text-gray-400'}`}>
                      {likeCount}
                    </span>
                  )}
                </button>
 
-               {/* Comment */}
+               {/* Comment Indicator */}
                <button className="flex items-center gap-1.5 group p-1">
                  <MessageCircle className="w-5 h-5 text-gray-400 group-hover:text-purple-600 transition-colors" />
                  {(post.comment_count > 0 || isDetailView) && (
@@ -133,7 +138,6 @@ const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onComme
                  )}
                </button>
 
-               {/* Share (Fake) */}
                <button className="p-1">
                  <Share2 className="w-5 h-5 text-gray-400 hover:text-gray-900 transition-colors" />
                </button>
