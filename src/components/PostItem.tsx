@@ -3,10 +3,13 @@ import { Heart, MessageCircle, Share2, MoreHorizontal } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Database } from '../types/supabase';
+import ShareModal from './ShareModal';
 
 type PostWithData = Database['public']['Tables']['community_posts']['Row'] & {
   profiles: { full_name: string | null; avatar_url: string | null } | null;
-  post_likes: { user_id: string }[]; 
+  post_likes: { user_id: string }[];
+  // Добавляем массив медиа
+  post_media?: { media_url: string; media_type: 'image' | 'video' }[]; 
 };
 
 interface PostItemProps {
@@ -23,14 +26,12 @@ const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onComme
   const likeCount = post.like_count || 0;
 
   const [animating, setAnimating] = useState(false);
-  const [processing, setProcessing] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false); // Состояние для модалки шеринга
 
   const handleLike = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!user) return openAuthModal();
-    if (processing) return;
 
-    setProcessing(true);
     setAnimating(true);
     setTimeout(() => setAnimating(false), 300);
 
@@ -52,30 +53,6 @@ const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onComme
     } catch (err) {
       console.error("Like error:", err);
       if (onPostUpdate) onPostUpdate(post.id, likeCount, isLiked);
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  // --- НОВАЯ ФУНКЦИЯ SHARE ---
-  const handleShare = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const shareData = {
-      title: 'BalaCare Пост',
-      text: post.content,
-      url: window.location.href, // Можно сделать ссылку на конкретный пост
-    };
-
-    try {
-      if (navigator.share) {
-        await navigator.share(shareData);
-      } else {
-        // Fallback: Копирование в буфер
-        await navigator.clipboard.writeText(`${post.content}\n\nИсточник: BalaCare`);
-        alert('Текст поста скопирован!');
-      }
-    } catch (err) {
-      console.log('Share canceled');
     }
   };
 
@@ -89,7 +66,11 @@ const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onComme
     return date.toLocaleDateString();
   };
 
+  // Получаем первое изображение (для MVP одна картинка на пост)
+  const postImage = post.post_media && post.post_media.length > 0 ? post.post_media[0].media_url : null;
+
   return (
+    <>
     <div 
       className={`px-4 py-3 ${isDetailView ? '' : 'border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer'}`}
       onClick={onCommentClick}
@@ -123,6 +104,13 @@ const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onComme
                {post.content}
             </p>
 
+            {/* ОТОБРАЖЕНИЕ ФОТО */}
+            {postImage && (
+                <div className="mt-2 mb-3 rounded-2xl overflow-hidden shadow-sm border border-gray-100 max-h-96">
+                    <img src={postImage} alt="Post content" className="w-full h-full object-cover" />
+                </div>
+            )}
+
             <div className="flex items-center gap-5 mt-2">
                <button 
                  onClick={handleLike}
@@ -151,13 +139,26 @@ const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onComme
                  )}
                </button>
 
-               <button onClick={handleShare} className="p-1">
+               <button 
+                onClick={(e) => { e.stopPropagation(); setShareModalOpen(true); }} 
+                className="p-1"
+               >
                  <Share2 className="w-5 h-5 text-gray-400 hover:text-gray-900 transition-colors" />
                </button>
             </div>
          </div>
       </div>
     </div>
+
+    {/* SHARE MODAL */}
+    <ShareModal 
+        isOpen={shareModalOpen} 
+        onClose={() => setShareModalOpen(false)} 
+        postText={post.content.slice(0, 100) + '...'}
+        // Генерируем ссылку (в идеале на страницу поста, но пока на общий раздел)
+        postUrl={`${window.location.origin}/community?post=${post.id}`}
+    />
+    </>
   );
 };
 
