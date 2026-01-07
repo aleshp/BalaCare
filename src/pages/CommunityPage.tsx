@@ -1,30 +1,37 @@
-import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, MessageSquare, LayoutList } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { Loader2, Plus, MessageSquare, LayoutList, Image as ImageIcon, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Database } from '../types/supabase';
 import AuthGate from '../components/AuthGate';
 import { useAuth } from '../context/AuthContext';
 import PostItem from '../components/PostItem';
 import ThreadView from '../components/ThreadView';
-import { ChatList } from './ChatPage'; // Импортируем компонент чатов
+import { ChatList } from './ChatPage';
 
+// Обновленный тип с post_media
 type PostWithData = Database['public']['Tables']['community_posts']['Row'] & {
   profiles: { full_name: string | null; avatar_url: string | null } | null;
   post_likes: { user_id: string }[]; 
+  post_media: { media_url: string; media_type: 'image' | 'video' }[]; 
 };
 
 const CommunityPage: React.FC = () => {
   const { user, openAuthModal } = useAuth();
   const isLoggedIn = !!user;
 
-  // Tabs: 'feed' | 'chats'
   const [activeTab, setActiveTab] = useState<'feed' | 'chats'>('feed');
-
   const [posts, setPosts] = useState<PostWithData[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Создание поста
   const [isCreating, setIsCreating] = useState(false);
   const [newPostContent, setNewPostContent] = useState('');
   const [posting, setPosting] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -33,12 +40,14 @@ const CommunityPage: React.FC = () => {
 
   const fetchPosts = async () => {
     try {
+      // ОБЯЗАТЕЛЬНО добавляем post_media в запрос
       let query = supabase
         .from('community_posts')
         .select(`
           *,
           profiles:user_id (full_name, avatar_url),
-          post_likes:post_likes(user_id)
+          post_likes:post_likes(user_id),
+          post_media(media_url, media_type)
         `)
         .eq('is_visible', true)
         .order('created_at', { ascending: false });
@@ -77,61 +86,93 @@ const CommunityPage: React.FC = () => {
       }));
   };
 
+  // --- ОБРАБОТКА ВЫБОРА ФОТО ---
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setSelectedImage(file);
+      // Создаем URL для превью
+      const previewUrl = URL.createObjectURL(file);
+      setImagePreview(previewUrl);
+    }
+  };
+
+  const clearImage = () => {
+    setSelectedImage(null);
+    setImagePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const handleCreatePost = async () => {
-    if (!newPostContent.trim() || !user) return;
+    if ((!newPostContent.trim() && !selectedImage) || !user) return;
     setPosting(true);
+
     try {
-      const { error } = await supabase.from('community_posts').insert({
+      // 1. Создаем пост
+      const { data: postData, error: postError } = await supabase
+        .from('community_posts')
+        .insert({
           user_id: user.id,
           content: newPostContent,
           is_visible: true,
           like_count: 0,
           comment_count: 0
-        });
-      if (error) throw error;
+        })
+        .select()
+        .single();
+
+      if (postError) throw postError;
+
+      // 2. Если есть картинка, загружаем её
+      if (selectedImage && postData) {
+         const fileExt = selectedImage.name.split('.').pop();
+         const fileName = `${postData.id}/${Math.random()}.${fileExt}`;
+         
+         const { error: uploadError } = await supabase.storage
+            .from('post_images') // Бакет, который мы создали
+            .upload(fileName, selectedImage);
+
+         if (uploadError) throw uploadError;
+
+         const { data: { publicUrl } } = supabase.storage
+            .from('post_images')
+            .getPublicUrl(fileName);
+
+         // 3. Создаем запись в post_media
+         await supabase.from('post_media').insert({
+             post_id: postData.id,
+             media_url: publicUrl,
+             media_type: 'image'
+         });
+      }
+
       setNewPostContent('');
+      clearImage();
       setIsCreating(false);
       await fetchPosts();
-    } catch (error) {
-      alert('Ошибка при публикации');
+
+    } catch (error: any) {
+      console.error(error);
+      alert('Ошибка при публикации: ' + error.message);
     } finally {
       setPosting(false);
     }
   };
 
-  // --- ЛОГИКА СОЗДАНИЯ ЧАТА ---
   const handleStartChat = async (targetUserId: string) => {
     if (!user) return openAuthModal();
     if (targetUserId === user.id) return alert("Нельзя писать самому себе");
-
-    // 1. Проверяем, есть ли уже чат
-    // Это сложный запрос, упростим: создаем новый или возвращаем ID если есть дубликат
-    // В реальном проекте нужна RPC функция для поиска общего чата.
-    // Сделаем просто: создаем запись, если такой пары нет - сработает, если есть - найдем её.
     
-    // Пока простой вариант: создаем новую запись в conversations и добавляем участников
     try {
-       // Создаем разговор
-       const { data: conv, error: convError } = await supabase
-         .from('conversations')
-         .insert({})
-         .select()
-         .single();
-       
+       const { data: conv, error: convError } = await supabase.from('conversations').insert({}).select().single();
        if (convError) throw convError;
 
-       // Добавляем участников
        await supabase.from('conversation_participants').insert([
          { conversation_id: conv.id, user_id: user.id },
          { conversation_id: conv.id, user_id: targetUserId }
        ]);
-       
-       // Переключаемся на вкладку чатов (в идеале сразу открыть этот чат, но пока так)
        setActiveTab('chats');
     } catch (e) {
-       console.error("Chat creation error (maybe exists)", e);
-       // Если чат уже есть, мы просто переходим во вкладку чатов.
-       // (Для идеального UX нужно найти ID существующего чата и открыть его)
        setActiveTab('chats');
     }
   };
@@ -140,7 +181,7 @@ const CommunityPage: React.FC = () => {
 
   return (
     <div className="pt-6 pb-24 bg-white min-h-screen relative">
-      {/* Header with Tabs */}
+      {/* Header */}
       <div className="px-6 mb-4 sticky top-[60px] bg-white/95 backdrop-blur z-20 pt-2 border-b border-gray-100">
         <div className="flex justify-between items-center mb-3">
              <h1 className="text-3xl font-black text-gray-900">Сообщество</h1>
@@ -170,39 +211,70 @@ const CommunityPage: React.FC = () => {
         </div>
       </div>
 
-      {/* --- Вкладка: ЛЕНТА --- */}
+      {/* FEED TAB */}
       {activeTab === 'feed' && (
         <>
             {isCreating && (
                 <div className="px-6 mb-6 animate-fade-in">
                     <div className="flex gap-4">
-                    <div className="flex flex-col items-center">
-                        <div className="w-10 h-10 rounded-full bg-gray-100 overflow-hidden mb-2">
-                            <div className="w-full h-full bg-gradient-to-tr from-purple-400 to-pink-400"></div>
+                        <div className="flex flex-col items-center">
+                            <div className="w-10 h-10 rounded-full bg-gray-100 overflow-hidden mb-2">
+                                <div className="w-full h-full bg-gradient-to-tr from-purple-400 to-pink-400"></div>
+                            </div>
+                            <div className="w-0.5 flex-1 bg-gray-200 rounded-full"></div>
                         </div>
-                        <div className="w-0.5 flex-1 bg-gray-200 rounded-full"></div>
-                    </div>
-                    
-                    <div className="flex-1 pb-4">
-                        <p className="font-bold text-sm text-gray-900 mb-1">Вы</p>
-                        <textarea 
-                            value={newPostContent}
-                            onChange={e => setNewPostContent(e.target.value)}
-                            placeholder="Начните ветку..."
-                            className="w-full text-sm outline-none placeholder-gray-400 resize-none h-20"
-                            autoFocus
-                        />
-                        <div className="flex justify-end gap-3 mt-2">
-                            <button onClick={() => setIsCreating(false)} className="text-gray-400 font-bold text-sm">Отмена</button>
-                            <button 
-                            onClick={handleCreatePost}
-                            disabled={!newPostContent.trim() || posting}
-                            className="bg-purple-600 text-white px-4 py-1.5 rounded-full font-bold text-sm disabled:opacity-50"
-                            >
-                                {posting ? '...' : 'Опубликовать'}
-                            </button>
+                        
+                        <div className="flex-1 pb-4">
+                            <p className="font-bold text-sm text-gray-900 mb-1">Вы</p>
+                            <textarea 
+                                value={newPostContent}
+                                onChange={e => setNewPostContent(e.target.value)}
+                                placeholder="Начните ветку..."
+                                className="w-full text-sm outline-none placeholder-gray-400 resize-none h-20"
+                                autoFocus
+                            />
+
+                            {/* Preview Image */}
+                            {imagePreview && (
+                                <div className="relative w-full h-40 bg-gray-100 rounded-xl mb-3 overflow-hidden group">
+                                    <img src={imagePreview} className="w-full h-full object-cover" alt="Preview" />
+                                    <button 
+                                        onClick={clearImage}
+                                        className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            )}
+
+                            <div className="flex justify-between items-center mt-2 border-t border-gray-100 pt-2">
+                                {/* Image Upload Button */}
+                                <button 
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="text-gray-400 hover:text-purple-600 p-2 rounded-full hover:bg-gray-100"
+                                >
+                                    <ImageIcon className="w-5 h-5" />
+                                </button>
+                                <input 
+                                    type="file" 
+                                    ref={fileInputRef} 
+                                    className="hidden" 
+                                    accept="image/*" // ТОЛЬКО ФОТО
+                                    onChange={handleImageSelect}
+                                />
+
+                                <div className="flex gap-3">
+                                    <button onClick={() => { setIsCreating(false); clearImage(); }} className="text-gray-400 font-bold text-sm">Отмена</button>
+                                    <button 
+                                        onClick={handleCreatePost}
+                                        disabled={(!newPostContent.trim() && !selectedImage) || posting}
+                                        className="bg-purple-600 text-white px-4 py-1.5 rounded-full font-bold text-sm disabled:opacity-50"
+                                    >
+                                        {posting ? '...' : 'Опубликовать'}
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                    </div>
                     </div>
                 </div>
             )}
@@ -231,7 +303,7 @@ const CommunityPage: React.FC = () => {
         </>
       )}
 
-      {/* --- Вкладка: ЧАТЫ --- */}
+      {/* CHATS TAB */}
       {activeTab === 'chats' && (
           isLoggedIn ? <ChatList /> : <div className="mt-10 px-4"><AuthGate /></div>
       )}
@@ -243,7 +315,7 @@ const CommunityPage: React.FC = () => {
            onClose={() => setSelectedPostId(null)}
            onPostUpdate={handlePostUpdate}
            onCommentAdded={() => handleCommentUpdate(selectedPost.id)}
-           onStartChat={handleStartChat} // Передаем функцию старта чата
+           onStartChat={handleStartChat}
          />
       )}
     </div>
