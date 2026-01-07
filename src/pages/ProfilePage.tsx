@@ -3,7 +3,6 @@ import { User, MapPin, Save, Loader2, LogOut, Globe, Camera } from 'lucide-react
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import AuthGate from '../components/AuthGate';
-import { Country, City }  from 'country-state-city';
 
 const ProfilePage: React.FC = () => {
   const { user, profile, loading: authLoading, signOut, openAuthModal } = useAuth();
@@ -22,8 +21,10 @@ const ProfilePage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false); // Отдельная загрузка для аватара
 
-  const countries = Country.getAllCountries();
-  const cities = City.getCitiesOfCountry(selectedCountryCode) || [];
+  const countries = [{ isoCode: 'KZ', name: 'Казахстан' }, { isoCode: 'RU', name: 'Россия' }];
+  const cities = selectedCountryCode === 'KZ' 
+     ? [{ name: 'Алматы' }, { name: 'Астана' }, { name: 'Шымкент' }] 
+     : [{ name: 'Москва' }, { name: 'Санкт-Петербург' }];
 
   useEffect(() => {
     if (profile) {
