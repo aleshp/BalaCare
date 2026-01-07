@@ -1,24 +1,46 @@
 import React, { useState, useEffect } from 'react';
-import { User, MapPin, Save, Loader2, LogOut } from 'lucide-react';
+import { User, MapPin, Save, Loader2, LogOut, Globe } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import AuthGate from '../components/AuthGate';
+
+// Импортируем библиотеку для стран и городов
+import { Country, City }  from 'country-state-city';
 
 const ProfilePage: React.FC = () => {
   const { user, profile, loading: authLoading, signOut, openAuthModal } = useAuth();
   
   const [fullName, setFullName] = useState('');
-  const [city, setCity] = useState('');
   const [role, setRole] = useState('parent');
+  
+  // Состояния для локации
+  const [selectedCountryCode, setSelectedCountryCode] = useState('KZ'); // По умолчанию Казахстан
+  const [selectedCity, setSelectedCity] = useState('');
+  
   const [saving, setSaving] = useState(false);
+
+  // Получаем списки
+  const countries = Country.getAllCountries();
+  const cities = City.getCitiesOfCountry(selectedCountryCode) || [];
 
   useEffect(() => {
     if (profile) {
       setFullName(profile.full_name || '');
-      setCity(profile.city || '');
       setRole(profile.role || 'parent');
+      
+      // Попытка восстановить город из базы
+      // В базе city хранится как строка. Если там есть что-то, ставим его.
+      // Страну не храним отдельно в этом простом примере, оставляем KZ или сбрасываем если нужно.
+      if (profile.city) {
+          setSelectedCity(profile.city);
+      }
     }
   }, [profile]);
+
+  const handleCountryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      setSelectedCountryCode(e.target.value);
+      setSelectedCity(''); // Сбрасываем город при смене страны
+  };
 
   const handleSave = async () => {
     if (!user) return;
@@ -29,7 +51,7 @@ const ProfilePage: React.FC = () => {
         .from('profiles')
         .update({
           full_name: fullName,
-          city: city,
+          city: selectedCity, // Сохраняем просто название города
           role: role as 'parent' | 'specialist'
         })
         .eq('id', user.id);
@@ -45,14 +67,12 @@ const ProfilePage: React.FC = () => {
     }
   };
 
-  // Обработка состояний
   if (authLoading) return (
       <div className="flex h-screen items-center justify-center">
           <Loader2 className="w-10 h-10 text-purple-600 animate-spin" />
       </div>
   );
   
-  // Если не авторизован, показываем Gate
   if (!user) return (
       <div className="pt-20 px-6">
           <AuthGate />
@@ -102,17 +122,52 @@ const ProfilePage: React.FC = () => {
             />
           </div>
 
+          {/* Выбор Страны */}
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Страна</label>
+            <div className="relative">
+              <Globe className="absolute left-3 top-3.5 w-5 h-5 text-gray-400" />
+              <select 
+                value={selectedCountryCode}
+                onChange={handleCountryChange}
+                className="w-full pl-10 p-3 bg-gray-50 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium text-gray-800 appearance-none"
+              >
+                  {countries.map((country) => (
+                      <option key={country.isoCode} value={country.isoCode}>
+                          {country.name}
+                      </option>
+                  ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Выбор Города */}
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Город</label>
             <div className="relative">
               <MapPin className="absolute left-3 top-3.5 w-5 h-5 text-gray-400" />
-              <input 
-                type="text" 
-                placeholder="Алматы"
-                value={city}
-                onChange={e => setCity(e.target.value)}
-                className="w-full pl-10 p-3 bg-gray-50 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium text-gray-800 transition-all"
-              />
+              {cities.length > 0 ? (
+                  <select 
+                    value={selectedCity}
+                    onChange={e => setSelectedCity(e.target.value)}
+                    className="w-full pl-10 p-3 bg-gray-50 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium text-gray-800 appearance-none"
+                  >
+                    <option value="" disabled>Выберите город</option>
+                    {cities.map((city) => (
+                        <option key={city.name} value={city.name}>
+                            {city.name}
+                        </option>
+                    ))}
+                  </select>
+              ) : (
+                  <input 
+                    type="text"
+                    placeholder="Введите название города"
+                    value={selectedCity}
+                    onChange={e => setSelectedCity(e.target.value)}
+                    className="w-full pl-10 p-3 bg-gray-50 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium text-gray-800"
+                  />
+              )}
             </div>
           </div>
 
