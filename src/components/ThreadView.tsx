@@ -1,14 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { X, Send, Loader2, User } from 'lucide-react';
+import { X, Loader2, User } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import PostItem from './PostItem'; // Мы создадим его следующим
+import PostItem from './PostItem';
 import { Database } from '../types/supabase';
 
-// Типы
 type PostWithData = Database['public']['Tables']['community_posts']['Row'] & {
   profiles: { full_name: string | null; avatar_url: string | null } | null;
-  post_likes: { user_id: string }[]; // Чтобы проверить лайкнул ли я
+  post_likes: { user_id: string }[];
 };
 
 type CommentWithProfile = Database['public']['Tables']['post_comments']['Row'] & {
@@ -18,10 +17,12 @@ type CommentWithProfile = Database['public']['Tables']['post_comments']['Row'] &
 interface ThreadViewProps {
   post: PostWithData;
   onClose: () => void;
-  onUpdatePost: () => void; // Чтобы обновить счетчик комментов в родительской ленте
+  // Новые пропсы для синхронизации
+  onPostUpdate: (postId: string, newLikeCount: number, isLiked: boolean) => void;
+  onCommentAdded: () => void;
 }
 
-const ThreadView: React.FC<ThreadViewProps> = ({ post, onClose, onUpdatePost }) => {
+const ThreadView: React.FC<ThreadViewProps> = ({ post, onClose, onPostUpdate, onCommentAdded }) => {
   const { user, openAuthModal } = useAuth();
   const [comments, setComments] = useState<CommentWithProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,7 +44,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ post, onClose, onUpdatePost }) 
       .order('created_at', { ascending: true });
 
     if (error) console.error(error);
-    if (data) setComments(data as any); // ts-ignore для простоты join типов
+    if (data) setComments(data as any);
     setLoading(false);
   };
 
@@ -64,8 +65,8 @@ const ThreadView: React.FC<ThreadViewProps> = ({ post, onClose, onUpdatePost }) 
       if (error) throw error;
       
       setNewComment('');
-      await fetchComments(); // Обновляем список
-      onUpdatePost(); // Обновляем счетчик в ленте
+      await fetchComments(); 
+      onCommentAdded(); // Обновляем счетчик в родительском компоненте
     } catch (err) {
       alert('Ошибка при отправке');
     } finally {
@@ -75,7 +76,6 @@ const ThreadView: React.FC<ThreadViewProps> = ({ post, onClose, onUpdatePost }) 
 
   return (
     <div className="fixed inset-0 z-50 bg-white flex flex-col animate-fade-in">
-      {/* Header */}
       <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-4 bg-white/80 backdrop-blur-md sticky top-0 z-10">
         <button onClick={onClose} className="p-2 -ml-2 hover:bg-gray-100 rounded-full">
           <X className="w-6 h-6 text-gray-900" />
@@ -84,14 +84,16 @@ const ThreadView: React.FC<ThreadViewProps> = ({ post, onClose, onUpdatePost }) 
       </div>
 
       <div className="flex-1 overflow-y-auto pb-20">
-        {/* Сам Пост (Родитель) */}
         <div className="pt-2">
-           <PostItem post={post} isDetailView={true} />
+           <PostItem 
+             post={post} 
+             isDetailView={true} 
+             onPostUpdate={onPostUpdate} // Лайк внутри модалки обновит и ленту
+           />
         </div>
 
         <div className="h-px bg-gray-100 w-full my-2"></div>
 
-        {/* Список Комментариев */}
         <div className="px-4 pb-4 space-y-6">
           {loading ? (
              <div className="flex justify-center py-4"><Loader2 className="animate-spin text-purple-600"/></div>
@@ -100,13 +102,12 @@ const ThreadView: React.FC<ThreadViewProps> = ({ post, onClose, onUpdatePost }) 
           ) : (
             comments.map((comment) => (
               <div key={comment.id} className="flex gap-3 relative">
-                 {/* Линия ветки (Threads style) */}
                  <div className="absolute top-10 left-4 bottom-[-24px] w-0.5 bg-gray-100 -z-10 last:hidden"></div>
 
                  <div className="flex-shrink-0">
                     <div className="w-9 h-9 rounded-full bg-gray-200 overflow-hidden border border-gray-100">
                       {comment.profiles?.avatar_url ? (
-                        <img src={comment.profiles.avatar_url} className="w-full h-full object-cover" />
+                        <img src={comment.profiles.avatar_url} className="w-full h-full object-cover" alt="User" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center bg-gray-50"><User className="w-4 h-4 text-gray-400"/></div>
                       )}
@@ -125,12 +126,14 @@ const ThreadView: React.FC<ThreadViewProps> = ({ post, onClose, onUpdatePost }) 
         </div>
       </div>
 
-      {/* Input Area */}
       <div className="p-4 border-t border-gray-100 bg-white absolute bottom-0 left-0 right-0">
         <div className="flex items-center gap-3 bg-gray-50 p-2 rounded-2xl border border-gray-100 focus-within:border-purple-300 focus-within:ring-2 focus-within:ring-purple-100 transition-all">
            <div className="w-8 h-8 rounded-full bg-gray-200 overflow-hidden flex-shrink-0">
-              {/* Аватар текущего юзера (можно взять из контекста, но пока заглушка если нет) */}
-               <div className="w-full h-full bg-gradient-to-br from-purple-400 to-pink-400"></div>
+               {user ? ( // Показываем аватар юзера если есть
+                   <div className="w-full h-full bg-gradient-to-br from-purple-400 to-pink-400"></div> 
+               ) : (
+                   <div className="w-full h-full bg-gray-300"></div>
+               )}
            </div>
            <input 
              value={newComment}
