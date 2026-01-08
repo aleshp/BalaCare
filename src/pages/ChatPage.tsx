@@ -99,7 +99,7 @@ const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, on
   );
 };
 
-// --- КОМПОНЕНТ: КОМНАТА ЧАТА (ФИКС ЗДЕСЬ) ---
+// --- КОМПОНЕНТ: КОМНАТА ЧАТА ---
 const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: string, otherUser: any, onClose: () => void }) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -193,13 +193,9 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
   };
 
   return (
-    // ФИКС CSS: 
-    // 1. h-[100dvh] - высота экрана
-    // 2. flex flex-col - колонка
-    // 3. overscroll-none - запрет "резинового" скролла всей страницы
-    <div className="fixed inset-0 z-[99999] bg-[#F2F2F7] flex flex-col h-[100dvh] overscroll-none">
+    <div className="fixed inset-0 z-[99999] bg-[#F2F2F7] flex flex-col h-[100dvh]">
        
-       {/* 1. ШАПКА: flex-none (не сжимается) */}
+       {/* HEADER */}
        <div className="flex-none px-4 py-3 bg-white/90 backdrop-blur border-b border-gray-200 flex items-center gap-3 pt-safe-top shadow-sm z-20">
           <button onClick={onClose} className="p-1 -ml-2 hover:bg-gray-100 rounded-full transition-colors">
               <ArrowLeft className="w-6 h-6 text-gray-900"/>
@@ -215,15 +211,11 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
           
           <div className="flex-1 min-w-0">
               <span className="font-bold text-gray-900 block truncate">{otherUser?.full_name || 'Собеседник'}</span>
-              <span className="text-xs text-green-500">в сети</span>
+              <span className="text-xs text-gray-500">в сети</span>
           </div>
        </div>
 
-       {/* 2. СПИСОК СООБЩЕНИЙ: 
-           flex-1 (занимает всё доступное место)
-           overflow-y-auto (скроллится только этот блок)
-           min-h-0 (важно для flexbox, чтобы скролл работал)
-       */}
+       {/* MESSAGES LIST */}
        <div className="flex-1 overflow-y-auto min-h-0 p-4 bg-[#e5e5e5]">
           <div className="space-y-1">
             {messages.map((msg) => (
@@ -238,12 +230,9 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
           <div ref={messagesEndRef} className="h-2" />
        </div>
 
-       {/* 3. ПОЛЕ ВВОДА: 
-           flex-none (не сжимается, всегда внизу)
-           bg-white (не прозрачный)
-           pb-safe (учитывает отступ для iPhone)
-       */}
-       <div className="flex-none bg-white border-t border-gray-200 p-3 pb-safe z-30 w-full">
+       {/* INPUT AREA */}
+       {/* ФИКС: pb-24 (96px) отступ снизу. Теперь точно поднимется! */}
+       <div className="flex-none bg-white border-t border-gray-200 p-3 pb-24 z-30 w-full">
           <div className="flex items-end gap-2 bg-gray-100 p-1.5 rounded-[24px] focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 border border-transparent transition-all">
              <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors flex-shrink-0">
                  <Smile className="w-6 h-6" />
