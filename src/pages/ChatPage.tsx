@@ -320,10 +320,12 @@ export const ChatList = () => {
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-purple-600 w-8 h-8"/></div>;
 
   return (
-    <div className="pb-20 relative min-h-[60vh]">
+    // Убираем pb-20, чтобы контент не уходил под navbar
+    <div className="relative min-h-[60vh]">
+       {/* Кнопка "+" - ИСПРАВЛЕНИЕ: bottom-28 учитывает высоту navbar (~60px + отступ) */}
        <button 
          onClick={() => setShowSearch(true)}
-         className="fixed bottom-24 right-6 w-14 h-14 bg-black text-white rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-transform z-50"
+         className="fixed bottom-28 right-6 w-14 h-14 bg-black text-white rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-transform z-50 hover:bg-gray-800"
        >
           <Plus className="w-7 h-7" />
        </button>
@@ -334,11 +336,11 @@ export const ChatList = () => {
              <p>Сообщений пока нет</p>
           </div>
        ) : (
-          <div className="divide-y divide-gray-50">
+          <div className="divide-y divide-gray-50 pb-24">
              {conversations.map(chat => (
                 <div key={chat.id} onClick={() => setActiveChat(chat)} className="flex items-center gap-4 p-4 hover:bg-gray-50 cursor-pointer active:bg-gray-100">
                    <div className="w-14 h-14 rounded-full bg-gray-200 overflow-hidden border border-gray-100 flex-shrink-0">
-                      {chat.other_user?.avatar_url ? <img src={chat.other_user.avatar_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center bg-gray-100"><User className="w-6 h-6 text-gray-400"/></div>}
+                      {chat.other_user?.avatar_url ? <img src={chat.other_user.avatar_url} className="w-full h-full object-cover" alt="Avatar"/> : <div className="w-full h-full flex items-center justify-center bg-gray-100"><User className="w-6 h-6 text-gray-400"/></div>}
                    </div>
                    <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-baseline mb-1">
