@@ -4,7 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 
 // Компоненты
 import Header from './components/Header';
-import BottomNav from './components/BottomNav';
+
 import OnboardingScreen from './components/OnboardingScreen';
 import AuthModal from './components/AuthModal';
 
