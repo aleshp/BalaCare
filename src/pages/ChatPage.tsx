@@ -232,7 +232,7 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
        </div>
 
        {/* INPUT AREA: ФИКС 2: pb-10 поднимает инпут выше навбара */}
-       <div className="flex-none bg-white border-t border-gray-200 p-3 pb-12 z-30 w-full">
+       <div className="flex-none bg-white border-t border-gray-200 p-3 pb-13 z-30 w-full">
           <div className="flex items-end gap-2 bg-gray-100 p-1.5 rounded-[24px] focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 border border-transparent transition-all">
              <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors flex-shrink-0">
                  <Smile className="w-6 h-6" />
