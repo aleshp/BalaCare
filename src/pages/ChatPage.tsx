@@ -414,9 +414,10 @@ export const ChatList = () => {
 
   return (
     <div className="pb-24 relative min-h-[60vh]">
+       {/* КНОПКА ПЛЮС: подняли с bottom-24 на bottom-32 */}
        <button 
          onClick={() => setShowSearch(true)}
-         className="fixed bottom-24 right-6 w-14 h-14 bg-black text-white rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-transform z-40 hover:bg-gray-800"
+         className="fixed bottom-32 right-6 w-14 h-14 bg-black text-white rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-transform z-40 hover:bg-gray-800"
        >
           <Plus className="w-7 h-7" />
        </button>
