@@ -8,12 +8,13 @@ interface ShareModalProps {
   onClose: () => void;
   postUrl: string;
   postText: string;
+  postId: string; // <--- НОВЫЙ ПРОП
 }
 
-const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, postUrl, postText }) => {
+const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, postUrl, postText, postId }) => {
   const { user } = useAuth();
   const [recentChats, setRecentChats] = useState<any[]>([]);
-  const [sentTo, setSentTo] = useState<string[]>([]); // ID чатов, куда уже отправили
+  const [sentTo, setSentTo] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -24,24 +25,13 @@ const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, postUrl, postT
 
   const fetchRecentChats = async () => {
     setLoading(true);
-    // Получаем последние 5 чатов
-    const { data: myChats } = await supabase
-      .from('conversation_participants')
-      .select('conversation_id')
-      .eq('user_id', user!.id);
+    const { data: myChats } = await supabase.from('conversation_participants').select('conversation_id').eq('user_id', user!.id);
 
     if (myChats && myChats.length > 0) {
         const chatIds = myChats.map(c => c.conversation_id);
-        
         const { data: chats } = await supabase
             .from('conversations')
-            .select(`
-                id, updated_at,
-                conversation_participants (
-                    user_id,
-                    profiles (full_name, avatar_url)
-                )
-            `)
+            .select(`id, updated_at, conversation_participants(user_id, profiles(full_name, avatar_url))`)
             .in('id', chatIds)
             .order('updated_at', { ascending: false })
             .limit(5);
@@ -49,11 +39,7 @@ const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, postUrl, postT
         if (chats) {
             const formatted = chats.map((chat: any) => {
                 const other = chat.conversation_participants.find((p: any) => p.user_id !== user!.id)?.profiles;
-                return {
-                    id: chat.id,
-                    name: other?.full_name || 'Пользователь',
-                    avatar: other?.avatar_url
-                };
+                return { id: chat.id, name: other?.full_name || 'Пользователь', avatar: other?.avatar_url };
             });
             setRecentChats(formatted);
         }
@@ -62,40 +48,33 @@ const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, postUrl, postT
   };
 
   const sendToChat = async (chatId: string) => {
-      setSentTo(prev => [...prev, chatId]); // Оптимистично
+      setSentTo(prev => [...prev, chatId]);
       
-      const message = `Посмотри этот пост:\n${postText.slice(0,50)}...\n${postUrl}`;
-      
+      // ТЕПЕРЬ МЫ ОТПРАВЛЯЕМ post_id, А НЕ ПРОСТО ТЕКСТ
       await supabase.from('messages').insert({
           conversation_id: chatId,
           user_id: user!.id,
-          content: message
+          content: 'Поделился постом', // Текст-заглушка (отобразится в списке чатов)
+          post_id: postId // <--- САМОЕ ВАЖНОЕ
       });
       
-      // Обновляем время чата
       await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', chatId);
   };
 
   if (!isOpen) return null;
 
-  // ... (копирование и внешние ссылки как раньше)
-  const handleCopy = async () => { /* ... */ await navigator.clipboard.writeText(`${postText}\n\n${postUrl}`); onClose(); };
+  const handleCopy = async () => { await navigator.clipboard.writeText(`${postUrl}`); alert('Ссылка скопирована'); onClose(); };
   const handleWhatsApp = () => { window.open(`https://wa.me/?text=${encodeURIComponent(postText + '\n' + postUrl)}`, '_blank'); onClose(); };
   const handleTelegram = () => { window.open(`https://t.me/share/url?url=${encodeURIComponent(postUrl)}&text=${encodeURIComponent(postText)}`, '_blank'); onClose(); };
-  const handleNativeShare = async () => { /* ... */ };
 
   return (
     <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div 
-        className="bg-white w-full max-w-sm sm:rounded-3xl rounded-t-3xl p-6 shadow-2xl relative animate-slide-up"
-        onClick={e => e.stopPropagation()}
-      >
+      <div className="bg-white w-full max-w-sm sm:rounded-3xl rounded-t-3xl p-6 shadow-2xl relative animate-slide-up" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
           <h3 className="font-bold text-lg text-gray-900">Поделиться</h3>
           <button onClick={onClose} className="bg-gray-100 p-1 rounded-full text-gray-500"><X className="w-5 h-5" /></button>
         </div>
 
-        {/* --- TIKTOK STYLE INTERNAL SHARE --- */}
         {user && (
             <div className="mb-6">
                 <p className="text-xs font-bold text-gray-400 uppercase mb-3">Отправить в BalaCare</p>
@@ -105,11 +84,7 @@ const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, postUrl, postT
                      recentChats.map(chat => {
                          const isSent = sentTo.includes(chat.id);
                          return (
-                            <button 
-                                key={chat.id} 
-                                onClick={() => !isSent && sendToChat(chat.id)}
-                                className="flex flex-col items-center gap-1 min-w-[60px]"
-                            >
+                            <button key={chat.id} onClick={() => !isSent && sendToChat(chat.id)} className="flex flex-col items-center gap-1 min-w-[60px]">
                                 <div className="relative">
                                     <div className={`w-12 h-12 rounded-full overflow-hidden border-2 ${isSent ? 'border-green-500' : 'border-gray-100'}`}>
                                         {chat.avatar ? <img src={chat.avatar} className="w-full h-full object-cover"/> : <div className="w-full h-full bg-gray-200 flex items-center justify-center"><User className="w-5 h-5 text-gray-400"/></div>}
@@ -125,7 +100,6 @@ const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, postUrl, postT
             </div>
         )}
 
-        {/* EXTERNAL SHARE */}
         <div className="grid grid-cols-4 gap-4 mb-4">
           <button onClick={handleWhatsApp} className="flex flex-col items-center gap-2 group">
             <div className="w-14 h-14 bg-[#25D366] rounded-full flex items-center justify-center text-white shadow-lg active:scale-95 transition-transform"><MessageCircle className="w-7 h-7" /></div>
