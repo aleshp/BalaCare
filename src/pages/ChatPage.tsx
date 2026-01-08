@@ -193,7 +193,6 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
   };
 
   return (
-    // ФИКС 1: z-[99999] (максимальный), чтобы перекрыть любой BottomNav
     <div className="fixed inset-0 z-[99999] bg-[#F2F2F7] flex flex-col h-[100dvh]">
        
        {/* HEADER */}
@@ -216,7 +215,7 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
           </div>
        </div>
 
-       {/* MESSAGES LIST: flex-1 + min-h-0 */}
+       {/* MESSAGES LIST */}
        <div className="flex-1 overflow-y-auto min-h-0 p-4 bg-[#e5e5e5]">
           <div className="space-y-1">
             {messages.map((msg) => (
@@ -231,7 +230,8 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
           <div ref={messagesEndRef} className="h-2" />
        </div>
 
-       {/* INPUT AREA: ФИКС 2: pb-10 поднимает инпут выше навбара */}
+       {/* INPUT AREA */}
+       {/* ФИКС: pb-24 (96px) отступ снизу. Теперь точно поднимется! */}
        <div className="flex-none bg-white border-t border-gray-200 p-3 pb-24 z-30 w-full">
           <div className="flex items-end gap-2 bg-gray-100 p-1.5 rounded-[24px] focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 border border-transparent transition-all">
              <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors flex-shrink-0">
@@ -319,7 +319,7 @@ export const ChatList = () => {
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-purple-600 w-8 h-8"/></div>;
 
   return (
-    <div className="pb-20 relative min-h-[60vh]">
+    <div className="pb-24 relative min-h-[60vh]">
        <button 
          onClick={() => setShowSearch(true)}
          className="fixed bottom-24 right-6 w-14 h-14 bg-black text-white rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-transform z-40"
@@ -335,7 +335,7 @@ export const ChatList = () => {
        ) : (
           <div className="divide-y divide-gray-50">
              {conversations.map(chat => (
-                <div key={chat.id} onClick={() => setActiveChat(chat)} className="flex items-center gap-4 p-4 hover:bg-gray-50 cursor-pointer active:bg-gray-100">
+                <div key={chat.id} onClick={() => setActiveChat(chat)} className="flex items-center gap-4 p-4 hover:bg-gray-50 cursor-pointer active:bg-gray-100 transition-colors">
                    <div className="w-14 h-14 rounded-full bg-gray-200 overflow-hidden border border-gray-100 flex-shrink-0">
                       {chat.other_user?.avatar_url ? <img src={chat.other_user.avatar_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center bg-gray-100"><User className="w-6 h-6 text-gray-400"/></div>}
                    </div>
