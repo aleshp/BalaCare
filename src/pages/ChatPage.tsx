@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Loader2, ArrowLeft, Send, User, Plus, Smile, Check, CheckCheck, Circle } from 'lucide-react';
+import { Loader2, ArrowLeft, Send, User, Plus, Smile, Check, CheckCheck, X } from 'lucide-react';
 import { Database } from '../types/supabase';
 import UserSearch from '../components/UserSearch';
 
@@ -20,21 +20,24 @@ type Conversation = {
   } | null;
 };
 
-// --- КОМПОНЕНТ: ВЫБОР РЕАКЦИИ ---
+// Набор эмодзи для инпута
+const COMMON_EMOJIS = ["😂", "❤️", "👍", "🔥", "😭", "😍", "😮", "😡", "🥳", "🤔", "👀", "✅", "🙏", "👋", "🎉"];
+
+// --- КОМПОНЕНТ: РЕАКЦИИ НА СООБЩЕНИЕ (Всплывашка над сообщением) ---
 const ReactionPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => void, onClose: () => void }) => {
   const emojis = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
   
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
         // @ts-ignore
-        if (!e.target.closest('.reaction-picker')) onClose();
+        if (!e.target.closest('.reaction-bubble-picker')) onClose();
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
 
   return (
-    <div className="reaction-picker absolute -top-12 left-0 bg-white shadow-xl rounded-full px-3 py-2 flex gap-2 animate-scale-in z-50 border border-gray-100">
+    <div className="reaction-bubble-picker absolute -top-12 left-0 bg-white shadow-xl rounded-full px-3 py-2 flex gap-2 animate-scale-in z-50 border border-gray-100">
       {emojis.map(emoji => (
         <button 
           key={emoji} 
@@ -48,11 +51,31 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => vo
   );
 };
 
+// --- КОМПОНЕНТ: ЭМОДЗИ ДЛЯ ИНПУТА (Внизу) ---
+const InputEmojiPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => void, onClose: () => void }) => {
+    return (
+      <div className="absolute bottom-20 left-4 bg-white shadow-2xl border border-gray-200 p-3 rounded-2xl grid grid-cols-5 gap-2 z-[60] animate-fade-in w-64">
+          <div className="col-span-5 flex justify-between items-center mb-1 pb-1 border-b border-gray-100">
+              <span className="text-xs font-bold text-gray-400 uppercase">Эмодзи</span>
+              <button onClick={onClose}><X className="w-4 h-4 text-gray-400"/></button>
+          </div>
+          {COMMON_EMOJIS.map(emoji => (
+              <button 
+                key={emoji}
+                onClick={() => onSelect(emoji)}
+                className="text-2xl hover:bg-gray-100 rounded-lg p-1 transition-colors"
+              >
+                  {emoji}
+              </button>
+          ))}
+      </div>
+    );
+};
+
 // --- КОМПОНЕНТ: ПУЗЫРЬ СООБЩЕНИЯ ---
 const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, onReact: (id: string, emoji: string) => void }) => {
   const [showReactions, setShowReactions] = useState(false);
 
-  // Считаем реакции
   const reactionCounts = (msg.reactions || []).reduce((acc, r) => {
     acc[r.emoji] = (acc[r.emoji] || 0) + 1;
     return acc;
@@ -105,16 +128,14 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false); // Состояние пикера в инпуте
   
-  // Статус "В сети" собеседника
-  const [isOnline, setIsOnline] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchMessages();
 
-    // 1. ПОДПИСКА НА СООБЩЕНИЯ И РЕАКЦИИ
-    const chatChannel = supabase
+    const channel = supabase
       .channel(`room:${conversationId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` }, 
         (payload) => {
@@ -125,35 +146,12 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, 
         () => {
-           // При любой реакции обновляем всё (самый надежный способ для MVP)
            fetchMessages(); 
       })
       .subscribe();
 
-    // 2. ОТСЛЕЖИВАНИЕ ОНЛАЙН СТАТУСА (PRESENCE)
-    // Подписываемся на глобальный канал, где все юзеры отмечаются
-    const presenceChannel = supabase.channel('online-users');
-    
-    presenceChannel
-      .on('presence', { event: 'sync' }, () => {
-        const state = presenceChannel.presenceState();
-        // Проверяем, есть ли ID собеседника в списке онлайн
-        // state[id] возвращает массив сессий. Если массив не пуст - юзер онлайн.
-        const isUserOnline = Object.keys(state).includes(otherUser?.id);
-        setIsOnline(isUserOnline);
-      })
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED' && user) {
-          // Отправляем свой статус "Я тут"
-          await presenceChannel.track({ user_id: user.id, online_at: new Date().toISOString() });
-        }
-      });
-
-    return () => { 
-        supabase.removeChannel(chatChannel); 
-        supabase.removeChannel(presenceChannel);
-    };
-  }, [conversationId, otherUser?.id, user]);
+    return () => { supabase.removeChannel(channel); };
+  }, [conversationId]);
 
   const fetchMessages = async () => {
     const { data: msgs } = await supabase
@@ -164,7 +162,6 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
 
     if (msgs) {
         const msgIds = msgs.map(m => m.id);
-        // Загружаем реакции одним запросом
         const { data: reactions } = await supabase
             .from('message_reactions')
             .select('message_id, emoji, user_id')
@@ -190,34 +187,29 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
     if (!newMessage.trim() || !user) return;
     const content = newMessage.trim();
     setNewMessage('');
+    setShowEmojiPicker(false); // Закрываем эмодзи после отправки
 
     try {
-        const { error } = await supabase.from('messages').insert({
+        await supabase.from('messages').insert({
             conversation_id: conversationId,
             user_id: user.id,
             content: content
         });
-        if(error) throw error;
-
-        // Обновляем updated_at чата
         await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
     } catch (e) {
-        console.error(e);
-        alert("Ошибка отправки. Проверьте интернет.");
+        alert("Ошибка отправки");
     }
   };
 
   const handleReaction = async (messageId: string, emoji: string) => {
       if (!user) return;
       try {
-          // Пытаемся вставить
           const { error } = await supabase.from('message_reactions').insert({
               message_id: messageId,
               user_id: user.id,
               emoji: emoji
           });
           
-          // Если ошибка 23505 (уникальность), значит реакция уже есть -> УДАЛЯЕМ ЕЁ
           if (error?.code === '23505') {
               await supabase.from('message_reactions').delete()
                 .eq('message_id', messageId)
@@ -227,15 +219,20 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
       } catch (e) { console.error(e); }
   };
 
+  const addEmoji = (emoji: string) => {
+      setNewMessage(prev => prev + emoji);
+  };
+
   return (
     <div className="fixed inset-0 z-[99999] bg-[#F2F2F7] flex flex-col h-[100dvh]">
+       
        {/* HEADER */}
        <div className="flex-none px-4 py-3 bg-white/90 backdrop-blur border-b border-gray-200 flex items-center gap-3 pt-safe-top shadow-sm z-20">
           <button onClick={onClose} className="p-1 -ml-2 hover:bg-gray-100 rounded-full transition-colors">
               <ArrowLeft className="w-6 h-6 text-gray-900"/>
           </button>
           
-          <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden border border-gray-100 relative">
+          <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden border border-gray-100">
              {otherUser?.avatar_url ? (
                  <img src={otherUser.avatar_url} className="w-full h-full object-cover" alt="User"/>
              ) : (
@@ -245,10 +242,7 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
           
           <div className="flex-1 min-w-0">
               <span className="font-bold text-gray-900 block truncate">{otherUser?.full_name || 'Собеседник'}</span>
-              <div className="flex items-center gap-1.5">
-                  <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-gray-300'}`}></span>
-                  <span className="text-xs text-gray-500">{isOnline ? 'В сети' : 'Не в сети'}</span>
-              </div>
+              <span className="text-xs text-gray-500">в сети</span>
           </div>
        </div>
 
@@ -268,9 +262,21 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
        </div>
 
        {/* INPUT AREA */}
-       <div className="flex-none bg-white border-t border-gray-200 p-3 pb-24 z-30 w-full">
+       <div className="flex-none bg-white border-t border-gray-200 p-3 pb-24 z-30 w-full relative">
+          
+          {/* Picker Компонент */}
+          {showEmojiPicker && (
+              <InputEmojiPicker 
+                  onSelect={addEmoji} 
+                  onClose={() => setShowEmojiPicker(false)} 
+              />
+          )}
+
           <div className="flex items-end gap-2 bg-gray-100 p-1.5 rounded-[24px] focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 border border-transparent transition-all">
-             <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors flex-shrink-0">
+             <button 
+               onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+               className={`p-2 rounded-full transition-colors flex-shrink-0 ${showEmojiPicker ? 'text-purple-600 bg-purple-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-200'}`}
+             >
                  <Smile className="w-6 h-6" />
              </button>
              
@@ -309,20 +315,6 @@ export const ChatList = () => {
   const [activeChat, setActiveChat] = useState<Conversation | null>(null);
   const [showSearch, setShowSearch] = useState(false);
 
-  // Для отслеживания онлайн статусов в списке (опционально)
-  useEffect(() => {
-      // Инициализируем presence для самого себя, чтобы другие видели меня
-      if (user) {
-          const channel = supabase.channel('online-users');
-          channel.on('presence', { event: 'sync' }, () => {}).subscribe(async (status) => {
-            if (status === 'SUBSCRIBED') {
-                await channel.track({ user_id: user.id, online_at: new Date().toISOString() });
-            }
-          });
-          return () => { supabase.removeChannel(channel); };
-      }
-  }, [user]);
-
   useEffect(() => {
     if (user) fetchConversations();
   }, [user]);
@@ -354,27 +346,16 @@ export const ChatList = () => {
   const handleStartNewChat = async (targetUser: any) => {
       setShowSearch(false);
       if (!user) return;
-      
-      // Если пытаемся написать самому себе
-      if (targetUser.id === user.id) {
-          alert("Вы не можете создать чат с самим собой.");
-          return;
-      }
-
       try {
           const { data: chatId, error } = await supabase.rpc('create_conversation', { other_user_id: targetUser.id });
           if (error) throw error;
-          
           const newChat = { id: chatId, updated_at: new Date().toISOString(), other_user: targetUser };
           setConversations(prev => {
               if (prev.some(c => c.id === chatId)) return prev;
               return [newChat, ...prev];
           });
           setActiveChat(newChat);
-      } catch (e) { 
-          console.error(e);
-          alert("Ошибка при создании чата"); 
-      }
+      } catch (e) { alert("Ошибка чата"); }
   };
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-purple-600 w-8 h-8"/></div>;
