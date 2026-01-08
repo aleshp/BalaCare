@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Loader2, ArrowLeft, Send, User, Plus, Smile, Check, CheckCheck } from 'lucide-react';
+import { Loader2, ArrowLeft, Send, User, Plus, Smile, Check, CheckCheck, Circle } from 'lucide-react';
 import { Database } from '../types/supabase';
 import UserSearch from '../components/UserSearch';
 
@@ -52,6 +52,7 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => vo
 const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, onReact: (id: string, emoji: string) => void }) => {
   const [showReactions, setShowReactions] = useState(false);
 
+  // Считаем реакции
   const reactionCounts = (msg.reactions || []).reduce((acc, r) => {
     acc[r.emoji] = (acc[r.emoji] || 0) + 1;
     return acc;
@@ -105,12 +106,15 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const chatContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Статус "В сети" собеседника
+  const [isOnline, setIsOnline] = useState(false);
 
   useEffect(() => {
     fetchMessages();
 
-    const channel = supabase
+    // 1. ПОДПИСКА НА СООБЩЕНИЯ И РЕАКЦИИ
+    const chatChannel = supabase
       .channel(`room:${conversationId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` }, 
         (payload) => {
@@ -121,12 +125,35 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, 
         () => {
+           // При любой реакции обновляем всё (самый надежный способ для MVP)
            fetchMessages(); 
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
-  }, [conversationId]);
+    // 2. ОТСЛЕЖИВАНИЕ ОНЛАЙН СТАТУСА (PRESENCE)
+    // Подписываемся на глобальный канал, где все юзеры отмечаются
+    const presenceChannel = supabase.channel('online-users');
+    
+    presenceChannel
+      .on('presence', { event: 'sync' }, () => {
+        const state = presenceChannel.presenceState();
+        // Проверяем, есть ли ID собеседника в списке онлайн
+        // state[id] возвращает массив сессий. Если массив не пуст - юзер онлайн.
+        const isUserOnline = Object.keys(state).includes(otherUser?.id);
+        setIsOnline(isUserOnline);
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED' && user) {
+          // Отправляем свой статус "Я тут"
+          await presenceChannel.track({ user_id: user.id, online_at: new Date().toISOString() });
+        }
+      });
+
+    return () => { 
+        supabase.removeChannel(chatChannel); 
+        supabase.removeChannel(presenceChannel);
+    };
+  }, [conversationId, otherUser?.id, user]);
 
   const fetchMessages = async () => {
     const { data: msgs } = await supabase
@@ -137,6 +164,7 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
 
     if (msgs) {
         const msgIds = msgs.map(m => m.id);
+        // Загружаем реакции одним запросом
         const { data: reactions } = await supabase
             .from('message_reactions')
             .select('message_id, emoji, user_id')
@@ -164,26 +192,32 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
     setNewMessage('');
 
     try {
-        await supabase.from('messages').insert({
+        const { error } = await supabase.from('messages').insert({
             conversation_id: conversationId,
             user_id: user.id,
             content: content
         });
+        if(error) throw error;
+
+        // Обновляем updated_at чата
         await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
     } catch (e) {
-        alert("Ошибка отправки");
+        console.error(e);
+        alert("Ошибка отправки. Проверьте интернет.");
     }
   };
 
   const handleReaction = async (messageId: string, emoji: string) => {
       if (!user) return;
       try {
+          // Пытаемся вставить
           const { error } = await supabase.from('message_reactions').insert({
               message_id: messageId,
               user_id: user.id,
               emoji: emoji
           });
           
+          // Если ошибка 23505 (уникальность), значит реакция уже есть -> УДАЛЯЕМ ЕЁ
           if (error?.code === '23505') {
               await supabase.from('message_reactions').delete()
                 .eq('message_id', messageId)
@@ -195,14 +229,13 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
 
   return (
     <div className="fixed inset-0 z-[99999] bg-[#F2F2F7] flex flex-col h-[100dvh]">
-       
        {/* HEADER */}
        <div className="flex-none px-4 py-3 bg-white/90 backdrop-blur border-b border-gray-200 flex items-center gap-3 pt-safe-top shadow-sm z-20">
           <button onClick={onClose} className="p-1 -ml-2 hover:bg-gray-100 rounded-full transition-colors">
               <ArrowLeft className="w-6 h-6 text-gray-900"/>
           </button>
           
-          <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden border border-gray-100">
+          <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden border border-gray-100 relative">
              {otherUser?.avatar_url ? (
                  <img src={otherUser.avatar_url} className="w-full h-full object-cover" alt="User"/>
              ) : (
@@ -212,12 +245,15 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
           
           <div className="flex-1 min-w-0">
               <span className="font-bold text-gray-900 block truncate">{otherUser?.full_name || 'Собеседник'}</span>
-              <span className="text-xs text-gray-500">в сети</span>
+              <div className="flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+                  <span className="text-xs text-gray-500">{isOnline ? 'В сети' : 'Не в сети'}</span>
+              </div>
           </div>
        </div>
 
        {/* MESSAGES LIST */}
-       <div ref={chatContainerRef} className="flex-1 overflow-y-auto min-h-0 p-4 bg-[#e5e5e5]">
+       <div className="flex-1 overflow-y-auto min-h-0 p-4 bg-[#e5e5e5]">
           <div className="space-y-1">
             {messages.map((msg) => (
                 <MessageBubble 
@@ -231,12 +267,9 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
           <div ref={messagesEndRef} className="h-2" />
        </div>
 
-       {/* INPUT AREA - ФИКСИРОВАННЫЙ И ПРАВИЛЬНОЙ ВЫСОТЫ */}
-       <div className="flex-none bg-white border-t border-gray-200 p-4 z-50 w-full fixed bottom-0 left-0 right-0 shadow-lg"
-           style={{ 
-             paddingBottom: 'calc(1rem + max(env(safe-area-inset-bottom, 0px), 80px))'
-           }}>
-          <div className="flex items-end gap-2 bg-gray-100 p-2 rounded-[24px] focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 border border-transparent transition-all">
+       {/* INPUT AREA */}
+       <div className="flex-none bg-white border-t border-gray-200 p-3 pb-24 z-30 w-full">
+          <div className="flex items-end gap-2 bg-gray-100 p-1.5 rounded-[24px] focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 border border-transparent transition-all">
              <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors flex-shrink-0">
                  <Smile className="w-6 h-6" />
              </button>
@@ -251,18 +284,14 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
                    }
                }}
                placeholder="Сообщение..."
-               className="flex-1 bg-transparent py-2 px-2 outline-none text-base resize-none max-h-32 text-gray-900 placeholder-gray-500 min-h-[44px] leading-relaxed"
+               className="flex-1 bg-transparent py-2 px-2 outline-none text-base resize-none max-h-32 text-gray-900 placeholder-gray-500 min-h-[40px]"
                rows={1}
              />
              
              <button 
                 onClick={sendMessage} 
                 disabled={!newMessage.trim()}
-                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-md flex-shrink-0 ${
-                  newMessage.trim() 
-                    ? 'bg-purple-600 text-white hover:bg-purple-700 active:scale-95' 
-                    : 'bg-gray-200 text-gray-400'
-                }`}
+                className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-md flex-shrink-0 ${newMessage.trim() ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-gray-200 text-gray-400'}`}
              >
                 <Send className="w-5 h-5 ml-0.5" />
              </button>
@@ -279,6 +308,20 @@ export const ChatList = () => {
   const [loading, setLoading] = useState(true);
   const [activeChat, setActiveChat] = useState<Conversation | null>(null);
   const [showSearch, setShowSearch] = useState(false);
+
+  // Для отслеживания онлайн статусов в списке (опционально)
+  useEffect(() => {
+      // Инициализируем presence для самого себя, чтобы другие видели меня
+      if (user) {
+          const channel = supabase.channel('online-users');
+          channel.on('presence', { event: 'sync' }, () => {}).subscribe(async (status) => {
+            if (status === 'SUBSCRIBED') {
+                await channel.track({ user_id: user.id, online_at: new Date().toISOString() });
+            }
+          });
+          return () => { supabase.removeChannel(channel); };
+      }
+  }, [user]);
 
   useEffect(() => {
     if (user) fetchConversations();
@@ -311,16 +354,27 @@ export const ChatList = () => {
   const handleStartNewChat = async (targetUser: any) => {
       setShowSearch(false);
       if (!user) return;
+      
+      // Если пытаемся написать самому себе
+      if (targetUser.id === user.id) {
+          alert("Вы не можете создать чат с самим собой.");
+          return;
+      }
+
       try {
           const { data: chatId, error } = await supabase.rpc('create_conversation', { other_user_id: targetUser.id });
           if (error) throw error;
+          
           const newChat = { id: chatId, updated_at: new Date().toISOString(), other_user: targetUser };
           setConversations(prev => {
               if (prev.some(c => c.id === chatId)) return prev;
               return [newChat, ...prev];
           });
           setActiveChat(newChat);
-      } catch (e) { alert("Ошибка чата"); }
+      } catch (e) { 
+          console.error(e);
+          alert("Ошибка при создании чата"); 
+      }
   };
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-purple-600 w-8 h-8"/></div>;
