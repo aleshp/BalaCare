@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Loader2, ArrowLeft, Send, User, Plus, Smile, Check, CheckCheck, X, MoreVertical, ExternalLink } from 'lucide-react';
+import { Loader2, ArrowLeft, Send, User, Plus, Smile, Check, CheckCheck, X, MoreVertical, ChevronRight, Image as ImageIcon } from 'lucide-react';
 import { Database } from '../types/supabase';
 import UserSearch from '../components/UserSearch';
 
@@ -14,7 +14,7 @@ type Message = Database['public']['Tables']['messages']['Row'] & {
       id: string;
       content: string;
       user_id: string;
-      profiles: { full_name: string | null } | null;
+      profiles: { full_name: string | null; avatar_url: string | null } | null; // Добавили аватар автора поста
       post_media: { media_url: string }[];
   } | null;
 };
@@ -29,10 +29,9 @@ type Conversation = {
   } | null;
 };
 
-// Набор эмодзи
 const COMMON_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥", "🎉", "🤔"];
 
-// --- КОМПОНЕНТ: РЕАКЦИИ (Всплывашка над сообщением) ---
+// --- КОМПОНЕНТЫ РЕАКЦИЙ (Без изменений) ---
 const ReactionBubblePicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => void, onClose: () => void }) => {
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -46,83 +45,89 @@ const ReactionBubblePicker = ({ onSelect, onClose }: { onSelect: (emoji: string)
   return (
     <div className="reaction-picker-bubble absolute -top-10 left-0 bg-white/90 backdrop-blur-md shadow-xl rounded-full px-3 py-1.5 flex gap-2 animate-scale-in z-20 border border-gray-100/50">
       {COMMON_EMOJIS.slice(0, 5).map(emoji => (
-        <button 
-          key={emoji} 
-          onClick={(e) => { e.stopPropagation(); onSelect(emoji); }}
-          className="hover:scale-125 transition-transform text-lg leading-none active:scale-95"
-        >
-          {emoji}
-        </button>
+        <button key={emoji} onClick={(e) => { e.stopPropagation(); onSelect(emoji); }} className="hover:scale-125 transition-transform text-lg leading-none active:scale-95">{emoji}</button>
       ))}
     </div>
   );
 };
 
-// --- КОМПОНЕНТ: ЭМОДЗИ КЛАВИАТУРА (Снизу) ---
 const InputEmojiPicker = ({ onSelect }: { onSelect: (emoji: string) => void }) => {
     return (
       <div className="bg-gray-100 border-t border-gray-200 p-2 grid grid-cols-8 gap-2 animate-slide-up h-48 overflow-y-auto">
-          {COMMON_EMOJIS.map(emoji => (
-              <button 
-                key={emoji}
-                onClick={() => onSelect(emoji)}
-                className="text-2xl hover:bg-white rounded-lg p-2 transition-all active:scale-90"
-              >
-                  {emoji}
-              </button>
-          ))}
-          {/* Дополнительные эмодзи */}
-          {["👋", "🙏", "🤝", "💪", "👀", "✨", "💩", "👻", "💀", "🤡", "🎃", "🤖", "👾"].map(emoji => (
-               <button key={emoji} onClick={() => onSelect(emoji)} className="text-2xl hover:bg-white rounded-lg p-2 transition-all active:scale-90">{emoji}</button>
-          ))}
+          {COMMON_EMOJIS.map(emoji => ( <button key={emoji} onClick={() => onSelect(emoji)} className="text-2xl hover:bg-white rounded-lg p-2 transition-all active:scale-90">{emoji}</button> ))}
+          {["👋", "🙏", "🤝", "💪", "👀", "✨", "💩", "👻", "💀", "🤡", "🎃", "🤖", "👾"].map(emoji => ( <button key={emoji} onClick={() => onSelect(emoji)} className="text-2xl hover:bg-white rounded-lg p-2 transition-all active:scale-90">{emoji}</button> ))}
       </div>
     );
 };
 
-// --- КОМПОНЕНТ: КАРТОЧКА ПОСТА ВНУТРИ ЧАТА ---
-const PostPreviewCard = ({ post }: { post: NonNullable<Message['community_posts']> }) => {
+// --- НОВЫЙ ДИЗАЙН КАРТОЧКИ ПОСТА ---
+const PostPreviewCard = ({ post, isMe, onCloseChat }: { post: NonNullable<Message['community_posts']>, isMe: boolean, onCloseChat: () => void }) => {
     const navigate = useNavigate();
     const image = post.post_media && post.post_media.length > 0 ? post.post_media[0].media_url : null;
 
     const handleClick = (e: React.MouseEvent) => {
         e.stopPropagation();
+        // 1. Закрываем чат
+        onCloseChat(); 
+        // 2. Переходим к посту
         navigate(`/community?postId=${post.id}`);
     };
 
     return (
         <div 
             onClick={handleClick}
-            className="mt-1 mb-2 bg-gray-50 border border-gray-200 rounded-xl overflow-hidden cursor-pointer hover:bg-gray-100 transition-colors w-full min-w-[200px]"
+            className={`mt-1 mb-2 rounded-xl overflow-hidden cursor-pointer transition-all active:scale-95 border w-full min-w-[220px] max-w-[260px]
+                ${isMe 
+                    ? 'bg-purple-700/50 border-purple-500/30' // Стиль для "моего" сообщения
+                    : 'bg-white border-gray-200' // Стиль для чужого
+                }
+            `}
         >
-            <div className="px-3 py-2 flex items-center gap-2 border-b border-gray-100/50">
-                <div className="w-5 h-5 rounded-full bg-purple-100 flex items-center justify-center border border-purple-200">
-                    <User className="w-3 h-3 text-purple-600" />
-                </div>
-                <span className="text-xs font-bold text-gray-700 truncate max-w-[120px]">
-                    {post.profiles?.full_name || 'Автор'}
-                </span>
-            </div>
-
-            {image && (
-                <div className="h-28 w-full bg-gray-200 relative">
+            {/* Картинка (если есть) */}
+            {image ? (
+                <div className="h-32 w-full bg-gray-200 relative">
                     <img src={image} className="w-full h-full object-cover" alt="Post" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-60"></div>
+                    <span className="absolute bottom-2 left-2 text-[10px] text-white font-bold px-2 py-0.5 bg-black/40 backdrop-blur rounded-full flex items-center gap-1">
+                        <ImageIcon className="w-3 h-3" /> Пост
+                    </span>
+                </div>
+            ) : (
+                // Если картинки нет, показываем красивую заглушку с текстом
+                <div className={`h-24 w-full p-3 flex flex-col justify-center ${isMe ? 'bg-purple-800/30' : 'bg-gray-50'}`}>
+                    <p className={`text-xs line-clamp-3 font-medium ${isMe ? 'text-white/90' : 'text-gray-600'}`}>
+                        "{post.content || '...'}"
+                    </p>
                 </div>
             )}
 
-            <div className="px-3 py-2">
-                <p className="text-xs text-gray-600 line-clamp-2 leading-relaxed font-medium">
-                    {post.content || (image ? 'Фотография' : 'Без текста')}
-                </p>
-                <div className="mt-2 text-[10px] text-purple-600 font-bold flex items-center gap-1 uppercase tracking-wide">
-                    Открыть пост <ExternalLink className="w-3 h-3" />
+            {/* Футер карточки */}
+            <div className={`px-3 py-2 flex items-center justify-between ${isMe ? 'bg-purple-800/20' : 'bg-gray-50'}`}>
+                <div className="flex items-center gap-2 overflow-hidden">
+                    <div className="w-5 h-5 rounded-full overflow-hidden flex-shrink-0 bg-gray-300">
+                        {post.profiles?.avatar_url ? (
+                            <img src={post.profiles.avatar_url} className="w-full h-full object-cover" />
+                        ) : (
+                            <User className="w-3 h-3 text-gray-500 m-auto mt-1" />
+                        )}
+                    </div>
+                    <div className="flex flex-col overflow-hidden">
+                        <span className={`text-[10px] font-bold truncate ${isMe ? 'text-white' : 'text-gray-800'}`}>
+                            {post.profiles?.full_name || 'Автор'}
+                        </span>
+                        <span className={`text-[9px] truncate ${isMe ? 'text-purple-200' : 'text-gray-400'}`}>
+                            Нажмите, чтобы открыть
+                        </span>
+                    </div>
                 </div>
+                <ChevronRight className={`w-4 h-4 ${isMe ? 'text-purple-200' : 'text-gray-400'}`} />
             </div>
         </div>
     );
 };
 
-// --- КОМПОНЕНТ: СООБЩЕНИЕ ---
-const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, onReact: (id: string, emoji: string) => void }) => {
+// --- СООБЩЕНИЕ ---
+const MessageBubble = ({ msg, isMe, onReact, onCloseChat }: { msg: Message, isMe: boolean, onReact: (id: string, emoji: string) => void, onCloseChat: () => void }) => {
   const [showReactions, setShowReactions] = useState(false);
 
   const reactionCounts = (msg.reactions || []).reduce((acc, r) => {
@@ -145,16 +150,19 @@ const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, on
           style={{ boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
         >
           {showReactions && !isMe && (
-             <ReactionBubblePicker 
-               onClose={() => setShowReactions(false)} 
-               onSelect={(emoji) => { onReact(msg.id, emoji); setShowReactions(false); }} 
-             />
+             <ReactionBubblePicker onClose={() => setShowReactions(false)} onSelect={(emoji) => { onReact(msg.id, emoji); setShowReactions(false); }} />
           )}
 
+          {/* КАРТОЧКА ПОСТА */}
           {msg.community_posts && (
-              <PostPreviewCard post={msg.community_posts} />
+              <PostPreviewCard 
+                  post={msg.community_posts} 
+                  isMe={isMe} 
+                  onCloseChat={onCloseChat} // Передаем функцию закрытия
+              />
           )}
 
+          {/* Текст сообщения */}
           {(msg.content && (msg.content !== 'Поделился постом' || !msg.community_posts)) && (
               <p className="whitespace-pre-wrap leading-relaxed px-1">{msg.content}</p>
           )}
@@ -180,28 +188,20 @@ const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, on
   );
 };
 
-// --- КОМПОНЕНТ: КОМНАТА ЧАТА (ГЛАВНЫЙ ЭКРАН) ---
+// --- КОМНАТА ЧАТА ---
 const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: string, otherUser: any, onClose: () => void }) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isOnline, setIsOnline] = useState(false);
-  
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchMessages();
-
-    const channel = supabase
-      .channel(`room:${conversationId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` }, 
-        () => {
-           // При любом изменении (новое сообщение) - перезагружаем всё
-           fetchMessages(); 
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, 
-        () => { fetchMessages(); })
+    const channel = supabase.channel(`room:${conversationId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` }, () => { fetchMessages(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, () => { fetchMessages(); })
       .subscribe();
 
     const presenceChannel = supabase.channel('online-users');
@@ -209,158 +209,82 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
         const state = presenceChannel.presenceState();
         setIsOnline(Object.keys(state).includes(otherUser?.id));
     }).subscribe(async (status) => {
-        if (status === 'SUBSCRIBED' && user) {
-            await presenceChannel.track({ user_id: user.id, online_at: new Date().toISOString() });
-        }
+        if (status === 'SUBSCRIBED' && user) await presenceChannel.track({ user_id: user.id, online_at: new Date().toISOString() });
     });
 
-    return () => { 
-        supabase.removeChannel(channel);
-        supabase.removeChannel(presenceChannel);
-    };
+    return () => { supabase.removeChannel(channel); supabase.removeChannel(presenceChannel); };
   }, [conversationId]);
 
   const fetchMessages = async () => {
-    // 1. Грузим сырые сообщения
     const { data: msgs, error } = await supabase
       .from('messages')
-      .select('*')
+      .select(`
+        *,
+        community_posts (
+            id, content, user_id,
+            profiles:user_id(full_name, avatar_url),
+            post_media(media_url)
+        )
+      `)
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true });
 
-    if (error) {
-        console.error("Chat Error:", error);
-        return;
-    }
+    if (error) return console.error(error);
 
     if (msgs) {
-        // 2. Ищем ID постов и сообщений
-        // @ts-ignore
-        const postIds = msgs.filter(m => m.post_id).map(m => m.post_id);
         const msgIds = msgs.map(m => m.id);
-
-        // 3. Грузим доп. данные
-        const [postsResponse, reactionsResponse] = await Promise.all([
-            postIds.length > 0 
-                ? supabase
-                    .from('community_posts')
-                    .select(`
-                        id, content, user_id,
-                        profiles:user_id(full_name),
-                        post_media(media_url)
-                    `)
-                    .in('id', postIds)
-                : Promise.resolve({ data: [] }),
-            
-            supabase
-                .from('message_reactions')
-                .select('message_id, emoji, user_id')
-                .in('message_id', msgIds)
-        ]);
-
-        const postsMap = new Map(postsResponse.data?.map((p: any) => [p.id, p]));
-        const reactionsData = reactionsResponse.data || [];
-
-        // 4. Собираем всё вместе
-        const combined = msgs.map(m => {
-            // @ts-ignore
-            const postId = m.post_id;
-            return {
-                ...m,
-                reactions: reactionsData.filter((r: any) => r.message_id === m.id) || [],
-                community_posts: postId ? postsMap.get(postId) : null
-            };
-        });
-
+        const { data: reactions } = await supabase.from('message_reactions').select('message_id, emoji, user_id').in('message_id', msgIds);
+        const combined = msgs.map(m => ({ ...m, reactions: reactions?.filter(r => r.message_id === m.id) || [] }));
         // @ts-ignore
         setMessages(combined);
         scrollToBottom();
     }
   };
 
-  const scrollToBottom = () => {
-    setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
-    }, 100);
-  };
+  const scrollToBottom = () => { setTimeout(() => { messagesEndRef.current?.scrollIntoView({ behavior: "auto" }); }, 100); };
 
   const sendMessage = async () => {
     if (!newMessage.trim() || !user) return;
     const content = newMessage.trim();
     setNewMessage('');
     setShowEmojiPicker(false);
-
     try {
-        await supabase.from('messages').insert({
-            conversation_id: conversationId,
-            user_id: user.id,
-            content: content
-        });
+        await supabase.from('messages').insert({ conversation_id: conversationId, user_id: user.id, content: content });
         await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
-    } catch (e) {
-        alert("Ошибка отправки");
-    }
+    } catch (e) { alert("Ошибка отправки"); }
   };
 
   const handleReaction = async (messageId: string, emoji: string) => {
       if (!user) return;
       try {
-          const { error } = await supabase.from('message_reactions').insert({
-              message_id: messageId,
-              user_id: user.id,
-              emoji: emoji
-          });
-          
-          if (error?.code === '23505') {
-              await supabase.from('message_reactions').delete()
-                .eq('message_id', messageId)
-                .eq('user_id', user.id)
-                .eq('emoji', emoji);
-          }
+          const { error } = await supabase.from('message_reactions').insert({ message_id: messageId, user_id: user.id, emoji: emoji });
+          if (error?.code === '23505') await supabase.from('message_reactions').delete().eq('message_id', messageId).eq('user_id', user.id).eq('emoji', emoji);
       } catch (e) { console.error(e); }
   };
 
-  const addEmoji = (emoji: string) => {
-      setNewMessage(prev => prev + emoji);
-  };
+  const addEmoji = (emoji: string) => { setNewMessage(prev => prev + emoji); };
 
   return createPortal(
     <div className="fixed inset-0 z-[99999] bg-[#F0F2F5] flex flex-col h-[100dvh]">
-       
        {/* HEADER */}
        <div className="flex-none px-4 py-3 bg-white/80 backdrop-blur-md border-b border-gray-200 flex items-center gap-3 pt-safe-top shadow-sm z-20">
           <button onClick={onClose} className="p-1.5 -ml-2 hover:bg-gray-100 rounded-full transition-colors active:scale-95">
               <ArrowLeft className="w-6 h-6 text-gray-800"/>
           </button>
-          
           <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden border border-gray-100 shadow-sm relative">
-             {otherUser?.avatar_url ? (
-                 <img src={otherUser.avatar_url} className="w-full h-full object-cover" alt="User"/>
-             ) : (
-                 <div className="w-full h-full bg-gradient-to-tr from-blue-400 to-purple-400 flex items-center justify-center text-white font-bold">
-                    {otherUser?.full_name?.[0] || 'U'}
-                 </div>
-             )}
+             {otherUser?.avatar_url ? <img src={otherUser.avatar_url} className="w-full h-full object-cover" alt="User"/> : <div className="w-full h-full bg-gradient-to-tr from-blue-400 to-purple-400 flex items-center justify-center text-white font-bold">{otherUser?.full_name?.[0] || 'U'}</div>}
              {isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>}
           </div>
-          
           <div className="flex-1 min-w-0 cursor-pointer">
               <span className="font-bold text-gray-900 block truncate text-[15px]">{otherUser?.full_name || 'Собеседник'}</span>
-              <span className={`text-xs ${isOnline ? 'text-green-600 font-medium' : 'text-gray-400'}`}>
-                  {isOnline ? 'В сети' : 'был(а) недавно'}
-              </span>
+              <span className={`text-xs ${isOnline ? 'text-green-600 font-medium' : 'text-gray-400'}`}>{isOnline ? 'В сети' : 'был(а) недавно'}</span>
           </div>
           <button className="p-2 text-gray-400 hover:bg-gray-100 rounded-full"><MoreVertical className="w-5 h-5"/></button>
        </div>
 
        {/* MESSAGES LIST */}
        <div className="flex-1 overflow-y-auto min-h-0 relative">
-          <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
-               style={{ 
-                   backgroundImage: `url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm-43-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm63 31c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM34 90c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm56-76c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM12 86c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm28-65c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm23-11c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-6 60c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm29 22c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zM32 63c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm57-13c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-9-21c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM60 91c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM35 41c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM12 60c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2z' fill='%239C92AC' fill-opacity='1' fill-rule='evenodd'/%3E%3C/svg%3E")` 
-               }} 
-          />
-          
+          <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm-43-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm63 31c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM34 90c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm56-76c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM12 86c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm28-65c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm23-11c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-6 60c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm29 22c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zM32 63c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm57-13c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-9-21c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM60 91c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM35 41c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM12 60c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2z' fill='%239C92AC' fill-opacity='1' fill-rule='evenodd'/%3E%3C/svg%3E")` }} />
           <div className="relative p-4 pb-2">
             {messages.map((msg, idx) => (
                 <MessageBubble 
@@ -368,6 +292,7 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
                     msg={msg} 
                     isMe={msg.user_id === user?.id} 
                     onReact={handleReaction} 
+                    onCloseChat={onClose} // <-- Передаем функцию закрытия
                 />
             ))}
             <div ref={messagesEndRef} className="h-1" />
@@ -375,50 +300,20 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
        </div>
 
        {/* INPUT AREA */}
-       <div className="flex-none bg-white border-t border-gray-200 p-3 z-30 w-full relative" style={{ paddingBottom: 'calc(20px + env(safe-area-inset-bottom))' }}>
-          
-          {showEmojiPicker && (
-              <InputEmojiPicker 
-                  onSelect={addEmoji} 
-                  // @ts-ignore
-                  onClose={() => setShowEmojiPicker(false)} 
-              />
-          )}
-
+       <div className="flex-none bg-white border-t border-gray-200 p-3 z-30 w-full relative" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 20px)' }}>
+          {showEmojiPicker && <InputEmojiPicker onSelect={addEmoji} />}
           <div className="flex items-end gap-2 bg-gray-100 p-1.5 rounded-[24px] focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 border border-transparent transition-all">
-             <button 
-               onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-               className={`p-2.5 rounded-full transition-colors flex-shrink-0 ${showEmojiPicker ? 'text-purple-600 bg-purple-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
-             >
-                 <Smile className="w-6 h-6" />
-             </button>
-             
+             <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className={`p-2.5 rounded-full transition-colors flex-shrink-0 ${showEmojiPicker ? 'text-purple-600 bg-purple-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}><Smile className="w-6 h-6" /></button>
              <textarea 
                value={newMessage}
                onChange={e => setNewMessage(e.target.value)}
-               onKeyDown={e => {
-                   if(e.key === 'Enter' && !e.shiftKey) {
-                       e.preventDefault();
-                       sendMessage();
-                   }
-               }}
+               onKeyDown={e => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }}}
                placeholder="Сообщение..."
-               className="flex-1 bg-transparent py-2.5 px-3 outline-none text-[15px] resize-none max-h-32 text-gray-900 placeholder-gray-500 leading-relaxed"
+               className="w-full bg-transparent py-2.5 px-3 outline-none text-[15px] resize-none max-h-32 text-gray-900 placeholder-gray-500 leading-relaxed"
                rows={1}
                style={{ minHeight: '44px' }}
              />
-             
-             <button 
-                onClick={sendMessage} 
-                disabled={!newMessage.trim()}
-                className={`w-11 h-11 rounded-full flex items-center justify-center transition-all shadow-md flex-shrink-0 mb-[1px] ${
-                  newMessage.trim() 
-                    ? 'bg-purple-600 text-white hover:bg-purple-700 active:scale-95' 
-                    : 'bg-gray-200 text-gray-400'
-                }`}
-             >
-                <Send className="w-5 h-5 ml-0.5" />
-             </button>
+             <button onClick={sendMessage} disabled={!newMessage.trim()} className={`w-11 h-11 rounded-full flex items-center justify-center transition-all shadow-md flex-shrink-0 mb-[1px] ${newMessage.trim() ? 'bg-purple-600 text-white hover:bg-purple-700 active:scale-95' : 'bg-gray-200 text-gray-400'}`}><Send className="w-5 h-5 ml-0.5" /></button>
           </div>
        </div>
     </div>,
@@ -438,31 +333,21 @@ export const ChatList = () => {
     if (user) {
         const channel = supabase.channel('online-users');
         channel.on('presence', { event: 'sync' }, () => {}).subscribe(async (status) => {
-          if (status === 'SUBSCRIBED') {
-              await channel.track({ user_id: user.id, online_at: new Date().toISOString() });
-          }
+          if (status === 'SUBSCRIBED') await channel.track({ user_id: user.id, online_at: new Date().toISOString() });
         });
         return () => { supabase.removeChannel(channel); };
     }
   }, [user]);
 
-  useEffect(() => {
-    if (user) fetchConversations();
-  }, [user]);
+  useEffect(() => { if (user) fetchConversations(); }, [user]);
 
   const fetchConversations = async () => {
     if (!user) return;
     try {
         const { data: myChats } = await supabase.from('conversation_participants').select('conversation_id').eq('user_id', user.id);
         if (!myChats || myChats.length === 0) { setLoading(false); return; }
-
         const chatIds = myChats.map(c => c.conversation_id);
-        const { data: chats } = await supabase
-          .from('conversations')
-          .select(`id, updated_at, conversation_participants(user_id, profiles(id, full_name, avatar_url))`)
-          .in('id', chatIds)
-          .order('updated_at', { ascending: false });
-
+        const { data: chats } = await supabase.from('conversations').select(`id, updated_at, conversation_participants(user_id, profiles(id, full_name, avatar_url))`).in('id', chatIds).order('updated_at', { ascending: false });
         if (chats) {
             const formatted = chats.map((chat: any) => {
                const other = chat.conversation_participants.find((p: any) => p.user_id !== user.id)?.profiles;
@@ -470,23 +355,18 @@ export const ChatList = () => {
             });
             setConversations(formatted);
         }
-    } catch (e) { console.error(e); } 
-    finally { setLoading(false); }
+    } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
   const handleStartNewChat = async (targetUser: any) => {
       setShowSearch(false);
       if (!user) return;
       if (targetUser.id === user.id) { alert("Вы не можете создать чат с самим собой."); return; }
-
       try {
           const { data: chatId, error } = await supabase.rpc('create_conversation', { other_user_id: targetUser.id });
           if (error) throw error;
           const newChat = { id: chatId, updated_at: new Date().toISOString(), other_user: targetUser };
-          setConversations(prev => {
-              if (prev.some(c => c.id === chatId)) return prev;
-              return [newChat, ...prev];
-          });
+          setConversations(prev => { if (prev.some(c => c.id === chatId)) return prev; return [newChat, ...prev]; });
           setActiveChat(newChat);
       } catch (e) { console.error(e); alert("Ошибка при создании чата"); }
   };
@@ -495,13 +375,7 @@ export const ChatList = () => {
 
   return (
     <div className="pb-24 relative min-h-[60vh]">
-       <button 
-         onClick={() => setShowSearch(true)}
-         className="fixed bottom-32 right-6 w-14 h-14 bg-black text-white rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-transform z-40 hover:bg-gray-800"
-       >
-          <Plus className="w-7 h-7" />
-       </button>
-
+       <button onClick={() => setShowSearch(true)} className="fixed bottom-32 right-6 w-14 h-14 bg-black text-white rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-transform z-40 hover:bg-gray-800"><Plus className="w-7 h-7" /></button>
        {conversations.length === 0 ? (
           <div className="text-center py-20 text-gray-400 px-6">
              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4"><User className="w-8 h-8 text-gray-300"/></div>
@@ -525,7 +399,6 @@ export const ChatList = () => {
              ))}
           </div>
        )}
-
        {activeChat && <ChatRoom conversationId={activeChat.id} otherUser={activeChat.other_user} onClose={() => { setActiveChat(null); fetchConversations(); }} />}
        {showSearch && <UserSearch onClose={() => setShowSearch(false)} onUserSelect={handleStartNewChat} />}
     </div>
