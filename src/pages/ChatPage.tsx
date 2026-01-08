@@ -174,12 +174,30 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
     }
   };
 
+  const handleReaction = async (messageId: string, emoji: string) => {
+      if (!user) return;
+      try {
+          const { error } = await supabase.from('message_reactions').insert({
+              message_id: messageId,
+              user_id: user.id,
+              emoji: emoji
+          });
+          
+          if (error?.code === '23505') {
+              await supabase.from('message_reactions').delete()
+                .eq('message_id', messageId)
+                .eq('user_id', user.id)
+                .eq('emoji', emoji);
+          }
+      } catch (e) { console.error(e); }
+  };
+
   return (
-    // ИСПРАВЛЕНИЕ: z-[1000] - перекроет любой Nav Bar (который обычно z-50)
-    <div className="fixed inset-0 z-[1000] bg-[#F2F2F7] flex flex-col h-[100dvh] animate-slide-in-right">
+    // ФИКС 1: "fixed inset-0" с высоким z-index. h-[100dvh] для мобилок.
+    <div className="fixed inset-0 z-[2000] bg-[#F2F2F7] flex flex-col h-[100dvh]">
        
-       {/* HEADER */}
-       <div className="flex-none px-4 py-3 bg-white/90 backdrop-blur border-b border-gray-200 flex items-center gap-3 pt-safe-top shadow-sm z-20">
+       {/* HEADER: shrink-0 гарантирует, что он не сожмется */}
+       <div className="shrink-0 px-4 py-3 bg-white/90 backdrop-blur border-b border-gray-200 flex items-center gap-3 pt-safe-top shadow-sm z-20">
           <button onClick={onClose} className="p-1 -ml-2 hover:bg-gray-100 rounded-full transition-colors">
               <ArrowLeft className="w-6 h-6 text-gray-900"/>
           </button>
@@ -198,25 +216,26 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
           </div>
        </div>
 
-       {/* MESSAGES LIST */}
-       <div className="flex-1 overflow-y-auto p-4 bg-[#e5e5e5]">
+       {/* MESSAGES LIST: flex-1 + min-h-0 
+           min-h-0 - это КЛЮЧЕВОЙ фикс. Он позволяет блоку сжиматься, освобождая место для инпута. 
+       */}
+       <div className="flex-1 overflow-y-auto min-h-0 p-4 bg-[#e5e5e5]">
           <div className="space-y-1">
             {messages.map((msg) => (
                 <MessageBubble 
                     key={msg.id} 
                     msg={msg} 
                     isMe={msg.user_id === user?.id} 
-                    onReact={() => {}} // Упростил для примера (функция handleReaction внутри компонента выше)
+                    onReact={handleReaction} 
                 />
             ))}
           </div>
           <div ref={messagesEndRef} className="h-2" />
        </div>
 
-       {/* INPUT AREA */}
-       {/* ИСПРАВЛЕНИЕ: bg-white и высокий z-index для блока ввода */}
-       <div className="flex-none bg-white border-t border-gray-200 p-3 pb-safe z-30 w-full">
-          <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-[24px] focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 border border-transparent transition-all">
+       {/* INPUT AREA: shrink-0, чтобы его не сплющило */}
+       <div className="shrink-0 bg-white border-t border-gray-200 p-3 pb-safe z-30 w-full">
+          <div className="flex items-end gap-2 bg-gray-100 p-1.5 rounded-[24px] focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 border border-transparent transition-all">
              <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors flex-shrink-0">
                  <Smile className="w-6 h-6" />
              </button>
