@@ -323,7 +323,7 @@ export const ChatList = () => {
     <div className="pb-20 relative min-h-[60vh]">
        <button 
          onClick={() => setShowSearch(true)}
-         className="fixed bottom-24 right-6 w-14 h-14 bg-black text-white rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-transform z-40"
+         className="fixed bottom-24 right-6 w-14 h-14 bg-black text-white rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-transform z-50"
        >
           <Plus className="w-7 h-7" />
        </button>
