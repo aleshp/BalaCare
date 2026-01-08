@@ -211,17 +211,6 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
     setNewMessage('');
     setShowEmojiPicker(false);
 
-    // 2. ОПТИМИСТИЧНОЕ ОБНОВЛЕНИЕ: Сразу показываем сообщение в чате
-    const tempId = Math.random().toString(); // Временный ID
-    const optimisticMsg: Message = {
-        id: tempId,
-        conversation_id: conversationId,
-        user_id: user.id,
-        content: content,
-        is_read: false,
-        created_at: new Date().toISOString(),
-        reactions: []
-    };
 
     setMessages(prev => [...prev, optimisticMsg]);
     scrollToBottom();
