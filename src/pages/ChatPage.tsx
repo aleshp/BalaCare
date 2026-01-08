@@ -193,12 +193,11 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
   useEffect(() => {
     fetchMessages();
 
-    // Подписка на изменения (messages и reactions)
     const channel = supabase
       .channel(`room:${conversationId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` }, 
         () => {
-           // При любом изменении перезагружаем всё (надежнее всего для сложных данных)
+           // При любом изменении (новое сообщение) - перезагружаем всё
            fetchMessages(); 
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, 
@@ -221,9 +220,8 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
     };
   }, [conversationId]);
 
-  // --- ИСПРАВЛЕННАЯ ФУНКЦИЯ ЗАГРУЗКИ ---
   const fetchMessages = async () => {
-    // 1. Грузим сообщения
+    // 1. Грузим сырые сообщения
     const { data: msgs, error } = await supabase
       .from('messages')
       .select('*')
@@ -231,16 +229,17 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
       .order('created_at', { ascending: true });
 
     if (error) {
-        console.error("Ошибка загрузки:", error);
+        console.error("Chat Error:", error);
         return;
     }
 
     if (msgs) {
-        // 2. Собираем ID для подгрузки связанных данных
+        // 2. Ищем ID постов и сообщений
+        // @ts-ignore
         const postIds = msgs.filter(m => m.post_id).map(m => m.post_id);
         const msgIds = msgs.map(m => m.id);
 
-        // 3. Параллельно грузим посты и реакции
+        // 3. Грузим доп. данные
         const [postsResponse, reactionsResponse] = await Promise.all([
             postIds.length > 0 
                 ? supabase
@@ -259,16 +258,19 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
                 .in('message_id', msgIds)
         ]);
 
-        // 4. Мапим данные
         const postsMap = new Map(postsResponse.data?.map((p: any) => [p.id, p]));
         const reactionsData = reactionsResponse.data || [];
 
-        const combined = msgs.map(m => ({
-            ...m,
-            reactions: reactionsData.filter((r: any) => r.message_id === m.id) || [],
+        // 4. Собираем всё вместе
+        const combined = msgs.map(m => {
             // @ts-ignore
-            community_posts: m.post_id ? postsMap.get(m.post_id) : null
-        }));
+            const postId = m.post_id;
+            return {
+                ...m,
+                reactions: reactionsData.filter((r: any) => r.message_id === m.id) || [],
+                community_posts: postId ? postsMap.get(postId) : null
+            };
+        });
 
         // @ts-ignore
         setMessages(combined);
@@ -286,6 +288,7 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
     if (!newMessage.trim() || !user) return;
     const content = newMessage.trim();
     setNewMessage('');
+    setShowEmojiPicker(false);
 
     try {
         await supabase.from('messages').insert({
@@ -372,9 +375,17 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
        </div>
 
        {/* INPUT AREA */}
-       <div className="flex-none bg-white border-t border-gray-200 z-30 w-full relative">
+       <div className="flex-none bg-white border-t border-gray-200 p-3 z-30 w-full relative" style={{ paddingBottom: 'calc(20px + env(safe-area-inset-bottom))' }}>
           
-          <div className="flex items-end gap-2 p-3 pb-8 md:pb-4">
+          {showEmojiPicker && (
+              <InputEmojiPicker 
+                  onSelect={addEmoji} 
+                  // @ts-ignore
+                  onClose={() => setShowEmojiPicker(false)} 
+              />
+          )}
+
+          <div className="flex items-end gap-2 bg-gray-100 p-1.5 rounded-[24px] focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 border border-transparent transition-all">
              <button 
                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                className={`p-2.5 rounded-full transition-colors flex-shrink-0 ${showEmojiPicker ? 'text-purple-600 bg-purple-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
@@ -382,22 +393,20 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
                  <Smile className="w-6 h-6" />
              </button>
              
-             <div className="flex-1 bg-gray-100 rounded-[20px] flex items-center border border-transparent focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 transition-all">
-                <textarea 
-                  value={newMessage}
-                  onChange={e => setNewMessage(e.target.value)}
-                  onKeyDown={e => {
-                      if(e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          sendMessage();
-                      }
-                  }}
-                  placeholder="Сообщение..."
-                  className="w-full bg-transparent py-2.5 px-3 outline-none text-[15px] resize-none max-h-32 text-gray-900 placeholder-gray-500 leading-relaxed"
-                  rows={1}
-                  style={{ minHeight: '44px' }}
-                />
-             </div>
+             <textarea 
+               value={newMessage}
+               onChange={e => setNewMessage(e.target.value)}
+               onKeyDown={e => {
+                   if(e.key === 'Enter' && !e.shiftKey) {
+                       e.preventDefault();
+                       sendMessage();
+                   }
+               }}
+               placeholder="Сообщение..."
+               className="flex-1 bg-transparent py-2.5 px-3 outline-none text-[15px] resize-none max-h-32 text-gray-900 placeholder-gray-500 leading-relaxed"
+               rows={1}
+               style={{ minHeight: '44px' }}
+             />
              
              <button 
                 onClick={sendMessage} 
@@ -411,8 +420,6 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
                 <Send className="w-5 h-5 ml-0.5" />
              </button>
           </div>
-
-          {showEmojiPicker && <InputEmojiPicker onSelect={addEmoji} />}
        </div>
     </div>,
     document.body
