@@ -193,6 +193,7 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
   };
 
   return (
+    // z-[9999] - МАКСИМАЛЬНЫЙ приоритет, выше navbar (z-40)
     <div className="fixed inset-0 z-[9999] bg-[#F2F2F7] flex flex-col">
        
        {/* HEADER */}
@@ -230,7 +231,7 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
           <div ref={messagesEndRef} className="h-2" />
        </div>
 
-       {/* INPUT AREA - КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ */}
+       {/* INPUT AREA */}
        <div className="flex-shrink-0 bg-white border-t border-gray-200 p-3 w-full">
           <div className="flex items-end gap-2 bg-gray-100 p-1.5 rounded-[24px] focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 border border-transparent transition-all">
              <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors flex-shrink-0">
