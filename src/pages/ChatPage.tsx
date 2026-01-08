@@ -191,10 +191,28 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
   const sendMessage = async () => {
     if (!newMessage.trim() || !user) return;
     const content = newMessage.trim();
+    
+    // 1. Очищаем инпут сразу
     setNewMessage('');
     setShowEmojiPicker(false);
 
+    // 2. ОПТИМИСТИЧНОЕ ОБНОВЛЕНИЕ: Сразу показываем сообщение в чате
+    const tempId = Math.random().toString(); // Временный ID
+    const optimisticMsg: Message = {
+        id: tempId,
+        conversation_id: conversationId,
+        user_id: user.id,
+        content: content,
+        is_read: false,
+        created_at: new Date().toISOString(),
+        reactions: []
+    };
+
+    setMessages(prev => [...prev, optimisticMsg]);
+    scrollToBottom();
+
     try {
+        // 3. Отправляем на сервер
         const { error } = await supabase.from('messages').insert({
             conversation_id: conversationId,
             user_id: user.id,
@@ -204,9 +222,16 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
         if (error) throw error;
 
         await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
+        
+        // Примечание: Когда придет настоящее событие от Realtime, 
+        // оно заменит или дополнит это сообщение (React перерисует список).
+        // Но чтобы не было дублей при медленном инете, в useEffect у нас уже стоит защита от дублей по ID.
+        
     } catch (e) {
         console.error("Ошибка отправки:", e);
         alert("Ошибка отправки сообщения");
+        // Если ошибка - удаляем временное сообщение
+        setMessages(prev => prev.filter(m => m.id !== tempId));
     }
   };
 
