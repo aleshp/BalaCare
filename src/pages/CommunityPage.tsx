@@ -34,13 +34,14 @@ const CommunityPage: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
 
-  // Загружаем посты при старте (не зависим от user, чтобы грузить для гостей)
   useEffect(() => {
     fetchPostsAndHandleDeepLink();
-  }, [user]); // user в зависимости нужен, чтобы перекрасить лайки при входе
+  }, [user, searchParams]); // Добавили searchParams в зависимости
 
   const fetchPostsAndHandleDeepLink = async () => {
-    setLoading(true);
+    // Не ставим setLoading(true) здесь, чтобы не моргало при переключении табов
+    if (posts.length === 0) setLoading(true); 
+
     try {
       let query = supabase
         .from('community_posts')
@@ -62,14 +63,16 @@ const CommunityPage: React.FC = () => {
       if (data) {
         formattedPosts = data.map((post: any) => ({
           ...post,
-          // Если юзер есть - фильтруем лайки по нему. Если нет - массив лайков будет пуст для проверки isLiked
           post_likes: user ? post.post_likes.filter((like: any) => like.user_id === user.id) : []
         }));
       }
 
-      // Deep Linking (проверка ссылки)
+      // --- ЛОГИКА DEEP LINKING (ИСПРАВЛЕНА) ---
       const deepLinkPostId = searchParams.get('postId');
       if (deepLinkPostId) {
+        // 1. ПРИНУДИТЕЛЬНО ПЕРЕКЛЮЧАЕМ НА ВКЛАДКУ ЛЕНТЫ
+        setActiveTab('feed'); 
+
         const existingPost = formattedPosts.find(p => p.id === deepLinkPostId);
         if (existingPost) {
            setSelectedPostId(deepLinkPostId);
@@ -200,21 +203,21 @@ const CommunityPage: React.FC = () => {
   const handleStartChat = async (targetUserId: string) => {
     if (!user) return openAuthModal();
     if (targetUserId === user.id) return alert("Нельзя писать самому себе");
-
+    
+    // Закрываем пост
     setSelectedPostId(null);
-    setSearchParams({}); 
+    setSearchParams({});
 
     try {
-       // ИСПОЛЬЗУЕМ RPC ВМЕСТО INSERT
-       const { error } = await supabase
-         .rpc('create_conversation', { other_user_id: targetUserId });
-       
-       if (error) throw error;
+       const { data: conv, error: convError } = await supabase.from('conversations').insert({}).select().single();
+       if (convError) throw convError;
 
-       // Переходим во вкладку чатов (там список обновится сам при рендере)
+       await supabase.from('conversation_participants').insert([
+         { conversation_id: conv.id, user_id: user.id },
+         { conversation_id: conv.id, user_id: targetUserId }
+       ]);
        setActiveTab('chats');
     } catch (e) {
-       console.error(e);
        setActiveTab('chats');
     }
   };
@@ -256,11 +259,9 @@ const CommunityPage: React.FC = () => {
       {/* FEED TAB */}
       {activeTab === 'feed' && (
         <>
-            {/* Блок создания поста ИЛИ призыв войти */}
             <div className="px-6 mb-6 animate-fade-in">
                 {isLoggedIn ? (
                     isCreating ? (
-                        // ФОРМА СОЗДАНИЯ
                         <div className="flex gap-4">
                             <div className="flex flex-col items-center">
                                 <div className="w-10 h-10 rounded-full bg-gray-100 overflow-hidden mb-2">
@@ -300,9 +301,8 @@ const CommunityPage: React.FC = () => {
                                 </div>
                             </div>
                         </div>
-                    ) : null // Если не создаем пост и залогинены - ничего (кнопка + в шапке)
+                    ) : null 
                 ) : (
-                    // БАННЕР ДЛЯ ГОСТЕЙ
                     <div 
                         onClick={openAuthModal}
                         className="bg-purple-50 border border-purple-100 rounded-2xl p-4 flex items-center gap-4 cursor-pointer hover:bg-purple-100 transition-colors"
@@ -318,7 +318,6 @@ const CommunityPage: React.FC = () => {
                 )}
             </div>
 
-            {/* ЛЕНТА */}
             <div className="w-full">
                 {loading ? (
                     <div className="flex justify-center py-20"><Loader2 className="animate-spin text-purple-600 w-8 h-8"/></div>
@@ -338,7 +337,7 @@ const CommunityPage: React.FC = () => {
         </>
       )}
 
-      {/* CHATS TAB (Только для авторизованных) */}
+      {/* CHATS TAB */}
       {activeTab === 'chats' && (
           isLoggedIn ? <ChatList /> : (
             <div className="mt-10 px-4">
@@ -348,7 +347,7 @@ const CommunityPage: React.FC = () => {
           )
       )}
 
-      {/* Thread View Modal */}
+      {/* Вынесли ThreadView за пределы табов, но он все равно будет виден только если есть selectedPost */}
       {selectedPost && (
          <ThreadView 
            post={selectedPost} 
