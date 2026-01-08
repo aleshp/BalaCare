@@ -321,7 +321,7 @@ export const ChatList = () => {
 
   return (
     // Убираем pb-20, чтобы контент не уходил под navbar
-    <div className="relative min-h-[60vh]">
+    <div className="fixed bottom-20 right-6 z-50">
        {/* Кнопка "+" - ИСПРАВЛЕНИЕ: bottom-28 учитывает высоту navbar (~60px + отступ) */}
        <button 
          onClick={() => setShowSearch(true)}
