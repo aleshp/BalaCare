@@ -63,7 +63,7 @@ const InputEmojiPicker = ({ onSelect }: { onSelect: (emoji: string) => void }) =
                   {emoji}
               </button>
           ))}
-          {/* Дополнительные эмодзи для массы */}
+          {/* Дополнительные эмодзи */}
           {["👋", "🙏", "🤝", "💪", "👀", "✨", "💩", "👻", "💀", "🤡", "🎃", "🤖", "👾"].map(emoji => (
                <button key={emoji} onClick={() => onSelect(emoji)} className="text-2xl hover:bg-white rounded-lg p-2 transition-all active:scale-90">{emoji}</button>
           ))}
@@ -86,16 +86,17 @@ const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, on
         
         {/* Тело сообщения */}
         <div 
-          onDoubleClick={() => onReact(msg.id, '❤️')} // Быстрый лайк
-          onClick={() => setShowReactions(!showReactions)}
-          className={`px-4 py-2.5 text-[15px] shadow-sm relative cursor-pointer transition-all ${
+          // ИЗМЕНЕНИЕ: Запрет на реакцию самому себе
+          onDoubleClick={() => !isMe && onReact(msg.id, '❤️')} 
+          onClick={() => !isMe && setShowReactions(!showReactions)}
+          className={`px-4 py-2.5 text-[15px] shadow-sm relative transition-all ${
             isMe 
               ? 'bg-purple-600 text-white rounded-2xl rounded-tr-sm' 
-              : 'bg-white text-gray-900 rounded-2xl rounded-tl-sm border border-gray-100'
+              : 'bg-white text-gray-900 rounded-2xl rounded-tl-sm border border-gray-100 cursor-pointer' // cursor-pointer только для чужих
           }`}
           style={{ boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
         >
-          {showReactions && (
+          {showReactions && !isMe && (
              <ReactionBubblePicker 
                onClose={() => setShowReactions(false)} 
                onSelect={(emoji) => { onReact(msg.id, emoji); setShowReactions(false); }} 
@@ -126,7 +127,7 @@ const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, on
   );
 };
 
-// --- КОМПОНЕНТ: КОМНАТА ЧАТА (ГЛАВНЫЙ ЭКРАН) ---
+// --- КОМПОНЕНТ: КОМНАТА ЧАТА ---
 const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: string, otherUser: any, onClose: () => void }) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -146,7 +147,6 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
         (payload) => {
            if (payload.eventType === 'INSERT') {
                const newMsg = payload.new as Message;
-               // Защита от дублей
                setMessages(prev => {
                    if (prev.some(m => m.id === newMsg.id)) return prev;
                    return [...prev, { ...newMsg, reactions: [] }];
@@ -209,7 +209,7 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
     if (!newMessage.trim() || !user) return;
     const content = newMessage.trim();
     setNewMessage('');
-    // setShowEmojiPicker(false); // Не закрываем клавиатуру, чтобы писать дальше удобно
+    // Не закрываем клавиатуру эмодзи, если она открыта
 
     try {
         await supabase.from('messages').insert({
@@ -274,7 +274,7 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
           <button className="p-2 text-gray-400 hover:bg-gray-100 rounded-full"><MoreVertical className="w-5 h-5"/></button>
        </div>
 
-       {/* MESSAGES LIST + BACKGROUND */}
+       {/* MESSAGES LIST */}
        <div className="flex-1 overflow-y-auto min-h-0 relative">
           {/* Background Doodle */}
           <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
@@ -337,7 +337,7 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
              </button>
           </div>
 
-          {/* Emoji Keyboard (открывается вместо системной) */}
+          {/* Emoji Keyboard */}
           {showEmojiPicker && <InputEmojiPicker onSelect={addEmoji} />}
        </div>
     </div>,
@@ -424,8 +424,7 @@ export const ChatList = () => {
        {conversations.length === 0 ? (
           <div className="text-center py-20 text-gray-400 px-6">
              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4"><User className="w-8 h-8 text-gray-300"/></div>
-             <p className="font-medium text-gray-600">У вас пока нет сообщений</p>
-             <p className="text-sm mt-2">Нажмите кнопку +, чтобы найти друзей.</p>
+             <p>Сообщений пока нет</p>
           </div>
        ) : (
           <div className="divide-y divide-gray-50">
